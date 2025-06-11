@@ -1,0 +1,153 @@
+ChatGPT history summary ))):
+
+✅ Project Start
+📅 Date: 20.03.2025
+You began developing a Java Swing-based app, file.CopyFileScanner, to compare and manage files across directories with GUI support.
+
+🛠️ Core Features Implemented
+Multithreaded File Comparison and Copying
+Scans source and destination folders concurrently.
+Detects differences by size, content, and date.
+Uses ExecutorService, SwingWorker, and CompletionService.
+
+GUI with Java Swing
+Source/destination folder selection.
+Progress bar updates in background threads.
+"Find Copy" / "Find Duplicates" tabs.
+
+JTable displays results with checkboxes and sortable columns.
+Status Bar Panel
+Displays number of selected/copied files.
+Shows elapsed time.
+Refreshes after actions.
+
+🔁 Feature Enhancements
+Feature	Details
+Remember Last Selected Paths	Stores last-used source/destination paths.
+Selective Copying with Checkboxes	Checkbox disables if file already copied.
+Tab-Dependent UI Elements	"Copy" and "Duplicate" buttons toggle based on selected tab.
+Select All Checkbox	Syncs with table rows. Supports manual uncheck logic.
+Keyboard Shortcuts	Pressing space toggles checkbox selection on selected rows.
+
+🧠 Concurrency & Performance Issues Resolved
+Fixed issues where SwingWorker.done() was not called due to improper CompletionService usage.
+Improved memory management for large file scans.
+Introduced wait loops for task completion in background threads.
+Handled files on damaged disks (e.g., AccessDeniedException and unreadable files).
+
+💾 Serialization
+Added support to serialize/deserialize JTable state to a .ser file.
+Automatically saves on app exit using WindowListener.
+
+🧪 Disk and File System Logic
+Identified whether paths belong to the same physical disk using model/serial number.
+Distinguished HDD and SSD to assign thread counts dynamically (e.g., HDD = 1 thread, SSD = 2 threads).
+Developed logic to group folders by disk for efficient scanning.
+
+⚙️ Version Management
+Learned to manage Maven project version via pom.xml.
+Injected version into app via getClass().getPackage().getImplementationVersion() using MANIFEST.MF.
+
+🔧 Miscellaneous Topics Covered
+How to:
+Split a 3.64TB HDD for backup/OS use.
+Determine correct MB size when partitioning.
+Detect disk type from a path (HDD/SSD).
+Update GUI on manual field edits.
+Clear table sorting by clicking a column header.
+---------------------------------------------------------------------------------------------------
+🗓️ Project History
+2025-03-20
+Started file.CopyFileScanner project.
+Defined the main goal: compare files in source and destination folders.
+
+2025-03-24
+Planned main classes and GUI layout.
+Implemented initial file comparison logic with multithreading.
+
+2025-04-08
+Added duplicate file scanning feature.
+Used multithreading to handle large folder structures efficiently.
+
+2025-04-10
+Improved GUI behavior.
+Enhanced the progress bar, status panel, and checkboxes in the file table.
+
+2025-04-15
+Resolved thread shutdown issue.
+Implemented proper waiting and thread coordination using CompletionService.
+
+2025-04-20
+Handled file access issues.
+Added logic to skip unreadable or corrupted files (e.g. AccessDeniedException).
+
+2025-04-25
+Enhanced user experience.
+Improved real-time progress bar and UI updates during long-running tasks.
+
+2025-05-14
+Optimized file transformation simulation.
+Implemented and tested a high-performance character transformation method.
+
+2025-05-20
+Implemented sortable JTable.
+Added sorting toggles and clear sort functionality via column header click.
+
+2025-05-22
+Improved checkbox usability.
+Enabled spacebar toggle for checkboxes on multiple selected rows.
+
+2025-05-24
+Enabled auto-save of JTable state.
+Serialized table contents on application exit using a shutdown hook.
+
+2025-05-26
+Added state restore.
+Loaded JTable contents via deserialization on app startup.
+
+2025-05-28
+Dynamic threading based on physical disks.
+Grouped folders by device (HDD/SSD) and assigned threads accordingly.
+
+2025-06-01
+Integrated version management.
+Managed application version in Maven and displayed it in the GUI.
+
+2025-06-06
+Requested complete project timeline.
+Generated a history log of all major tasks and resolved issues.
+=======================================================================================================
+
+2025.03.20-:
+- console app: compare 2 folders, find duplicates. Run in multi threads.
+
+2025.04.04,07,08,09:
+- ui swing app: compare 2 folders, find duplicates, logs.
+- compare by cache contains, name, date.
+- added tabs, panels and 2 different tables for each action.
+- added progress bar, status bar with duration time, total count, messages, etc.
+
+2025.06.06:
+- SettingsManager
+
+2025.06.06:
+- create Table as separate class.
+- save path for TextField by loosing focus or press enter.
+- refactoring for packages.
+- serialization/deserialization table into files.
+- ThreadsManager for duplicate to split threads.
+2025.06.09:
+- finish ThreadsManager for duplicate.
+
+2025.06.10
+- SerializeManager - manage to load/save tables to files.
+2025.06.11
+- Serialize table was updated with new filePaths list - fixed and resolved.
+- version 1.1
+- start refactoring CopyFileScannerGUI class into many classes.
+- added to GIT.
+
+TODO:
+- clean table for proceeded (deleted/copied) rows by button (context menu);
+- focus selected row after filter columns;
+- issue with progressbar for deleting action;
