@@ -20,7 +20,7 @@ public class DuplicateFileScanner implements IFileScanner {
         String[] paths = directoryPath.split(DELIM);
 
         //Map<String, List<String>> filesByName = ThreadManager.oneThreadPerDevice(paths, new DuplicateFileScanner());
-        Map<String, List<String>> filesByName = new ThreadManager(paths, false, new SettingsManager(ActionHelper.ActionEnum.SCAN)).createDynamicThreads(new DuplicateFileScanner());
+        Map<String, List<String>> filesByName = new ThreadManager(paths, false, new SettingsManager(ActionHelper.Action.SCAN)).createDynamicThreads(new DuplicateFileScanner());
 
         // Step 2: Compare files with the same name using content hash
         Map<String, List<String>> duplicates = new HashMap<>();

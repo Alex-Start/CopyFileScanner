@@ -19,14 +19,14 @@ public class SettingsManager {
     public static final String DUPLICATE_FILES_SER = PropertyReader.getPropertyAsString("duplicateFiles", new File(System.getProperty("user.home"), "duplicateFiles.ser").getAbsolutePath());
     public static final String WORK_SESSION_ARCH_FOLDER = PropertyReader.getPropertyAsString("workSessionArchFolder", "work_table_arch");
 
-    private final ActionHelper.ActionEnum actionEnum;
+    private final ActionHelper.Action action;
 
-    public SettingsManager(ActionHelper.ActionEnum actionEnum) {
-        this.actionEnum = actionEnum;
+    public SettingsManager(ActionHelper.Action action) {
+        this.action = action;
     }
 
-    public ActionHelper.ActionEnum getActionHelperEnum() {
-        return actionEnum;
+    public ActionHelper.Action getActionHelperEnum() {
+        return action;
     }
 
     public int getThreadCount(int countCalcThreads) {
@@ -34,11 +34,11 @@ public class SettingsManager {
             throw new IllegalArgumentException("Action enum is null");
         }
         int res;
-        switch(actionEnum) {
+        switch(action) {
             case SCAN -> res = getThreadCountScan(countCalcThreads);
             case COPY -> res = getThreadCountCopy(countCalcThreads);
             case DELETE -> res = getThreadCountDelete(countCalcThreads);
-            default -> throw new IllegalArgumentException("Unknown Action enum: " + actionEnum);
+            default -> throw new IllegalArgumentException("Unknown Action enum: " + action);
         }
 
         return res;
@@ -66,7 +66,7 @@ public class SettingsManager {
         return getThreadCountCopy(new ThreadManager(path, true).getCountThreads());
     }
 
-    public static int getThreadCountDelete(String path) {
-        return getThreadCountDelete(new ThreadManager(path, true).getCountThreads());
+    public static int getThreadCountDelete(String[] paths) {
+        return getThreadCountDelete(new ThreadManager(paths, true).getCountThreads());
     }
 }

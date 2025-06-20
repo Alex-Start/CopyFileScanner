@@ -1,15 +1,14 @@
 package common;
 
 public class ActionHelper {
-
-    public enum ActionEnum {
-        SCAN("Scan"),
-        COPY("Copied"),
-        DELETE("Deleted");
+    public enum Action {
+        SCAN("Scan"),// scan files in threads
+        COPY("Copied"),// active copy panel
+        DELETE("Deleted");// active dupl. panel
 
         private final String value;
 
-        ActionEnum(String value) {
+        Action(String value) {
             this.value = value;
         }
 
@@ -18,24 +17,24 @@ public class ActionHelper {
         }
     }
 
-    private ActionEnum actionName;
+    private Action actionName;
 
-    public ActionHelper(ActionEnum name) {
+    public ActionHelper(Action name) {
         actionName = name;
     }
 
-    public ActionEnum getActionName() {
+    public Action getActionName() {
         return actionName;
     }
 
-    public ActionHelper setActionName(ActionEnum name) {
+    public ActionHelper setActionName(Action name) {
         actionName = name;
         return this;
     }
 
-    public boolean isEqual(ActionEnum actionEnum) {
-        if(actionEnum == null && actionName == null) return true;
+    public boolean isEqual(Action action) {
+        if(action == null && actionName == null) return true;
         if(actionName == null) return false;
-        return actionName.equals(actionEnum);
+        return actionName.equals(action);
     }
 }

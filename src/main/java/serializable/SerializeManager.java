@@ -1,5 +1,7 @@
 package serializable;
 
+import ui.table.FileTableModel;
+
 import javax.swing.*;
 
 import java.io.IOException;
@@ -7,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 
 import static settings.SettingsManager.*;
 
@@ -16,22 +17,22 @@ public class SerializeManager {
     private static final String DATETIME_PATTERN = "yyyyMMdd-HHmmss";
     private static final String ARCHIVE_FOLDER = WORK_SESSION_ARCH_FOLDER;
 
-    public static void loadCopyTableFromFile(JTable table, List<String> filePath) {
-        TableSerializer.loadTableFromFile(table, COPY_FILES_SER, filePath);
+    public static void loadCopyTableFromFile(JTable table) {
+        TableSerializer.loadTableFromFile(table, COPY_FILES_SER, ((FileTableModel)table.getModel()).getListPaths());
     }
 
-    public static void loadDuplicateTableFromFile(JTable table, List<String> filePath) {
-        TableSerializer.loadTableFromFile(table, DUPLICATE_FILES_SER, filePath);
+    public static void loadDuplicateTableFromFile(JTable table) {
+        TableSerializer.loadTableFromFile(table, DUPLICATE_FILES_SER, ((FileTableModel)table.getModel()).getListPaths());
     }
 
-    public static void saveCopyTableToFile(JTable table, List<String> filePath) {
-        TableSerializer.saveTableToFile(table, COPY_FILES_SER, filePath);
-        TableSerializer.saveTableToFile(table, getBackUpPath(COPY_FILES_SER), filePath);
+    public static void saveCopyTableToFile(JTable table) {
+        TableSerializer.saveTableToFile(table, COPY_FILES_SER, ((FileTableModel)table.getModel()).getListPaths());
+        TableSerializer.saveTableToFile(table, getBackUpPath(COPY_FILES_SER), ((FileTableModel)table.getModel()).getListPaths());
     }
 
-    public static void saveDuplicateTableToFile(JTable table, List<String> filePath) {
-        TableSerializer.saveTableToFile(table, DUPLICATE_FILES_SER, filePath);
-        TableSerializer.saveTableToFile(table, getBackUpPath(DUPLICATE_FILES_SER), filePath);
+    public static void saveDuplicateTableToFile(JTable table) {
+        TableSerializer.saveTableToFile(table, DUPLICATE_FILES_SER, ((FileTableModel)table.getModel()).getListPaths());
+        TableSerializer.saveTableToFile(table, getBackUpPath(DUPLICATE_FILES_SER), ((FileTableModel)table.getModel()).getListPaths());
     }
 
     // add date time in the end of the file name

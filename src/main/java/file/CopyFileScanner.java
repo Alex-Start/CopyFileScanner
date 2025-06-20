@@ -30,11 +30,6 @@ public class CopyFileScanner {
                 return differences;
             }
 
-            if (destFiles == null || destFiles.isEmpty()) {
-                logger.warn("No files found in destination directory: {}", destDir);
-                return differences;
-            }
-
             Future<Map<String, String>> compareFuture = executor.submit(() -> new FileComparator(isCheckSource).compare(sourceFiles, destFiles));
             differences = compareFuture.get();
 

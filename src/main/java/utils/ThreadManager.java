@@ -40,7 +40,7 @@ public class ThreadManager {
         this.paths = paths;
         if(settingsManager == null) {
             //default value for settings
-            settingsManager = new SettingsManager(ActionHelper.ActionEnum.SCAN);
+            settingsManager = new SettingsManager(ActionHelper.Action.SCAN);
         }
         this.settingsManager = settingsManager;
         analyzePath(paths, isWriteOperation);

@@ -144,8 +144,11 @@ Generated a history log of all major tasks and resolved issues.
 2025.06.11
 - Serialize table was updated with new filePaths list - fixed and resolved.
 - version 1.1
-- start refactoring CopyFileScannerGUI class into many classes.
+- start refactoring ui.CopyFileScannerSwingUI class into many classes.
 - added to GIT.
+2025.06.12,17,18
+- refactoring to split to many classes.
+
 
 TODO:
 - clean table for proceeded (deleted/copied) rows by button (context menu);
