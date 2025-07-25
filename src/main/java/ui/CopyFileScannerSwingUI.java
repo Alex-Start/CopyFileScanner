@@ -1,6 +1,6 @@
 package ui;
 
-import common.ActionTab;
+import common.ActionTabWrap;
 import controller.FileOperationController;
 
 import javax.swing.*;
@@ -16,6 +16,7 @@ public class CopyFileScannerSwingUI extends JFrame {
     private static final JTabbedPane tabbedPane = new JTabbedPane();
 
     public static final int CHECKBOX_INDEX_COLUMN = 0;
+    public static final int FOLDER_INDEX_COLUMN = 1;
     public static final int FILE_INDEX_COLUMN = 2; // show source file and open source file
     public static final int COMMENT_INDEX_COLUMN = 3; // show comment and open dest. file
     // Message status
@@ -26,7 +27,7 @@ public class CopyFileScannerSwingUI extends JFrame {
     static final String DELETE_SOURCE = "Delete Source";
     static final String DELETE_DESTINATION = "Delete Destination";
 
-    private static final ActionTab ACTION_TAB = new ActionTab(ActionTab.Tab.COPY);
+    private static final ActionTabWrap ACTION_TAB = new ActionTabWrap(tabbedPane);
     private static final StatusBarPanel statusBarPanel = new StatusBarPanel(ACTION_TAB);
     private static final ButtonsManager buttonsManager = new ButtonsManager();
     private static FileOperationController fileOperationController;
@@ -77,7 +78,7 @@ public class CopyFileScannerSwingUI extends JFrame {
 
     private void registerListeners() {
         // Add tab change listener
-        tabbedPane.addChangeListener(e -> toggleComponents(tabbedPane.getSelectedIndex()));
+        tabbedPane.addChangeListener(e -> fileOperationController.toggleComponents());
 
         addWindowListener(new WindowAdapter() {
             @Override
@@ -90,19 +91,6 @@ public class CopyFileScannerSwingUI extends JFrame {
 
     public static FileOperationController getFileOperationController() {
         return fileOperationController;
-    }
-
-    private void toggleComponents(int tabIndex) {
-        boolean isFindCopy = (tabIndex == 0);
-
-        if (isFindCopy) {
-            getFileOperationController().getActionTabHelper().setActionName(ActionTab.Tab.COPY);
-        } else {
-            getFileOperationController().getActionTabHelper().setActionName(ActionTab.Tab.DUPLICATE);
-        }
-
-        getFileOperationController().checkCheckBoxes();
-        statusBarPanel.refreshStatusBar();
     }
 
 }

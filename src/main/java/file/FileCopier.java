@@ -7,6 +7,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import utils.FileUtils;
 
+import static ui.CopyFileScannerSwingUI.COPIED;
+
 public class FileCopier implements IFileAction {
     private static final Logger logger = LogManager.getLogger(FileCopier.class);
     private final Path sourceRoot;
@@ -22,15 +24,22 @@ public class FileCopier implements IFileAction {
         return "COPY";
     }
 
-    public void doAction(String relativePath) throws IOException {
+    @Override
+    public String getProceededName() {
+        return COPIED;
+    }
+
+    public boolean doAction(String relativePath) throws IOException {
         Path sourceFile = sourceRoot.resolve(relativePath);
         Path destFile = destRoot.resolve(relativePath);
+        boolean result = false;
         try {
-            FileUtils.copySingleFile(sourceFile, destFile);
+            result = FileUtils.copySingleFile(sourceFile, destFile);
             logger.info("Copied: {} -> {}", sourceFile, destFile);
         } catch (IOException e) {
             logger.error("Error copying file: {} -> {}", sourceFile, destFile, e);
             throw new IOException(e);
         }
+        return result;
     }
 }

@@ -1,6 +1,7 @@
 package ui;
 
 import file.DuplicateFileScanner;
+import utils.FileUtils;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,7 +14,7 @@ import java.util.prefs.Preferences;
 
 import static ui.CopyFileScannerSwingUI.SOURCE_DIR_DUPL;
 
-public interface TabPanel {
+public interface ITabPanel {
     JTable getJTable();
     String getRootPath(int columnIndex);
     JPanel createPanel();
@@ -21,6 +22,12 @@ public interface TabPanel {
     void setEnabledButton();
     void enablePanelAndButtons(boolean enableSelectAllCheckbox);
     void disablePanelAndButtons();
+    void setSelectAllCheckbox(boolean value);
+    TableFactory getTableFactory();
+    FileTableCellEditor getFileTableCellEditor();
+    ITableUpdater getTableUpdater();
+    String getSourceFieldText();
+    String getDestFieldText();
 
     default void selectFolder(Component rootPanel, JTextField field, String key, boolean multiple) {
         JFileChooser chooser = new JFileChooser();
@@ -70,18 +77,8 @@ public interface TabPanel {
         if(SOURCE_DIR_DUPL.equals(key)) {
             paths = path.split(DuplicateFileScanner.DELIM);
         }
-        if(! checkPath(paths)) {
+        if(! FileUtils.checkDirPath(paths)) {
             JOptionPane.showMessageDialog(component, "Invalid folder path: "+ path);
         }
-    }
-
-    private boolean checkPath(String[] paths) {
-        for (String path : paths) {
-            File dir = new File(path);
-            if (!dir.exists() || !dir.isDirectory()) {
-                return false;
-            }
-        }
-        return true;
     }
 }

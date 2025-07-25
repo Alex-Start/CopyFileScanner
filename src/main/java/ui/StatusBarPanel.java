@@ -1,6 +1,6 @@
 package ui;
 
-import common.ActionTab;
+import common.ActionTabWrap;
 
 import javax.swing.*;
 import java.text.DateFormat;
@@ -8,7 +8,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class StatusBarPanel {
+public class StatusBarPanel implements IStatusBarUpdater {
     private final JProgressBar progressBar;
     private final JLabel selectedFilesLabel;
     private final JLabel totalRowsLabel;
@@ -16,16 +16,16 @@ public class StatusBarPanel {
     private final JLabel messageLabel;
     private long startTime = System.currentTimeMillis();
     // List(select, total, duration, progress bar)
-    private final Map<ActionTab.Tab, List<Long>> statusBarData = new HashMap<>();
-    private final ActionTab actionTab;
-    private ActionTab.Tab setForTab;//null - set for current active tab
+    private final Map<ActionTabWrap.ActionTab, List<Long>> statusBarData = new HashMap<>();
+    private final ActionTabWrap actionTabWrap;
+    private ActionTabWrap.ActionTab setForActionTab;//null - set for current active tab
 
-    public StatusBarPanel(ActionTab actionTab) {
-        this.actionTab = actionTab;
+    public StatusBarPanel(ActionTabWrap actionTabWrap) {
+        this.actionTabWrap = actionTabWrap;
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        statusBarData.put(ActionTab.Tab.COPY, Arrays.asList(0L,0L,0L,0L));
-        statusBarData.put(ActionTab.Tab.DUPLICATE, Arrays.asList(0L,0L,0L,0L));
+        statusBarData.put(ActionTabWrap.ActionTab.COPY, Arrays.asList(0L,0L,0L,0L));
+        statusBarData.put(ActionTabWrap.ActionTab.DUPLICATE, Arrays.asList(0L,0L,0L,0L));
         totalRowsLabel = new JLabel("Total: 0");
         selectedFilesLabel = new JLabel("Selected: 0");
         durationLabel = new JLabel("Duration: 0s");
@@ -54,7 +54,7 @@ public class StatusBarPanel {
 
     public void cleanupStartTime() {
         startStartTime(); // Record start time
-        setAndRefreshDuration(0);
+        updateDuration(0);
     }
 
     public void startStartTime() {
@@ -62,12 +62,12 @@ public class StatusBarPanel {
     }
 
     public StatusBarPanel forCopy() {
-        setForTab = ActionTab.Tab.COPY;
+        setForActionTab = ActionTabWrap.ActionTab.COPY;
         return this;
     }
 
     public StatusBarPanel forDuplicate() {
-        setForTab = ActionTab.Tab.DUPLICATE;
+        setForActionTab = ActionTabWrap.ActionTab.DUPLICATE;
         return this;
     }
 
@@ -76,11 +76,11 @@ public class StatusBarPanel {
         if (proceeded != 0) {
             updateTotalLabel(proceeded);
         }
-        setForTab = null;
+        setForActionTab = null;
     }
 
     public void updateDuration() {
-        setAndRefreshDuration(getDurationSec());
+        updateDuration(getDurationSec());
     }
 
     private long getDurationSec() {
@@ -94,6 +94,17 @@ public class StatusBarPanel {
         return formatter.format(date);
     }
 
+    @Override
+    public void updateMessage(String message) {
+        messageLabel.setText(message);
+    }
+
+    @Override
+    public void updateProgressBar(int percentage) {
+        setStatusBarData(3, percentage);
+        refreshStatusBar(3, percentage);
+    }
+
     public void updateTotalLabel(int value) {
         if (value < 0) {
             // TODO index as const/enum/etc.
@@ -102,10 +113,10 @@ public class StatusBarPanel {
         if (value < 0) {
             value = 0;
         }
-        setAndRefreshTotal(value);
+        updateTotalRows(value);
     }
 
-    void refreshStatusBar() {
+    public void refreshStatusBar() {
         // TODO index as const/enum/etc.
         refreshStatusBar(0);
         refreshStatusBar(1);
@@ -140,40 +151,39 @@ public class StatusBarPanel {
         });
     }
 
-    public void setAndRefreshSelect(long value) {
+    public void updateSelectedFiles(long value) {
         setStatusBarData(0, value);
         refreshStatusBar(0, value);
     }
 
-    private void setAndRefreshTotal(long value) {
+    public void updateTotalRows(long value) {
         setStatusBarData(1, value);
         refreshStatusBar(1, value);
     }
 
-    private void setAndRefreshDuration(long value) {
+    public void updateDuration(long value) {
         setStatusBarData(2, value);
         refreshStatusBar(2, value);
     }
 
-    public void setAndRefreshProgressBar(long value) {
-        setStatusBarData(3, value);
-        refreshStatusBar(3, value);
+    public void cleanupProgressBar() {
+        updateProgressBar(0);
     }
 
     private long getStatusBarValue(int index) {
-        List<Long> list = statusBarData.get(actionTab.getActionName());
+        List<Long> list = statusBarData.get(actionTabWrap.getActionName());
         return list.get(index);
     }
 
     private void setStatusBarData(int index, long value) {
-        ActionTab.Tab tab = actionTab.getActionName();
-        if (ActionTab.Tab.COPY.equals(setForTab)) {
-            tab = ActionTab.Tab.COPY;
+        ActionTabWrap.ActionTab actionTab = actionTabWrap.getActionName();
+        if (ActionTabWrap.ActionTab.COPY.equals(setForActionTab)) {
+            actionTab = ActionTabWrap.ActionTab.COPY;
         }
-        if (ActionTab.Tab.DUPLICATE.equals(setForTab)) {
-            tab = ActionTab.Tab.DUPLICATE;
+        if (ActionTabWrap.ActionTab.DUPLICATE.equals(setForActionTab)) {
+            actionTab = ActionTabWrap.ActionTab.DUPLICATE;
         }
-        List<Long> list = statusBarData.get(tab);
+        List<Long> list = statusBarData.get(actionTab);
         list.set(index, value);
     }
 

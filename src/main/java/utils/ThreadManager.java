@@ -1,6 +1,7 @@
 package utils;
 
 import common.ActionHelper;
+import file.FileMetadata;
 import file.IFileScanner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,15 +17,16 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * Analyze folders and create threads to scan for the devices (according to folders)
+ */
 public class ThreadManager {
     private static final Logger logger = LogManager.getLogger(ThreadManager.class);
 
     private static final int CORES = Runtime.getRuntime().availableProcessors();
     private final MapManagerHelper mapManager = new MapManagerHelper(MAP_SERIAL_DISK_CACHE);
-    //private final Map<String, DeviceFolder> MAP_SERIAL_DISK = new HashMap<>();
-    private static final Map<String, DeviceFolder> MAP_SERIAL_DISK_CACHE = new HashMap<>();
 
-    private final String[] paths;
+    private static final Map<String, DeviceFolder> MAP_SERIAL_DISK_CACHE = new HashMap<>();
 
     private final SettingsManager settingsManager;
 
@@ -37,7 +39,6 @@ public class ThreadManager {
     }
 
     public ThreadManager(String[] paths, boolean isWriteOperation, SettingsManager settingsManager) {
-        this.paths = paths;
         if(settingsManager == null) {
             //default value for settings
             settingsManager = new SettingsManager(ActionHelper.Action.SCAN);
@@ -46,20 +47,19 @@ public class ThreadManager {
         analyzePath(paths, isWriteOperation);
     }
 
-    public Map<String, List<String>> createDynamicThreads(IFileScanner fileScanner) {
-        Map<String, List<String>> filesByName = new ConcurrentHashMap<>();
+    public Map<String, List<FileMetadata>> createDynamicThreads(IFileScanner fileScanner) {
+        Map<String, List<FileMetadata>> filesByName = new ConcurrentHashMap<>();
         Collection<DeviceFolder> devices = getMapSerialDisk().values();
 
         ExecutorService executor = Executors.newFixedThreadPool(getCountPoolThreads());
-        List<Callable<Void>> tasks = new ArrayList<>();
 
         for (DeviceFolder device : devices) {
             List<List<String>> partitions = splitFolders(device.getFolders(), settingsManager.getThreadCount(device.getCountThreads()));
             logger.info("Scan device: {} with count partitions: {} ", device, partitions.size());
             for (List<String> partition : partitions) {
-                tasks.add(() -> {
+                executor.submit(() -> {
                     for (String folder : partition) {
-                        fileScanner.scanFiles(folder, filesByName); // your scanning logic
+                        fileScanner.scanFiles(folder, filesByName);
                     }
                     return null;
                 });
@@ -67,11 +67,10 @@ public class ThreadManager {
         }
 
         try {
-            executor.invokeAll(tasks);
             executor.shutdown();
             executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
-            logger.error("Interrupt scan duplicates files", e);
+            logger.error("Interrupt scan files", e);
         }
 
         return filesByName;
@@ -86,8 +85,8 @@ public class ThreadManager {
         return result;
     }
 
-    public Map<String, List<String>> oneThreadPerDevice(IFileScanner fileScanner) {
-        Map<String, List<String>> filesByName = new ConcurrentHashMap<>();
+    public Map<String, List<FileMetadata>> oneThreadPerDevice(IFileScanner fileScanner) {
+        Map<String, List<FileMetadata>> filesByName = new ConcurrentHashMap<>();
         ExecutorService executorService = Executors.newFixedThreadPool(getCountPoolThreads());
 
         // Step 1: Scan files and group by name
@@ -97,7 +96,7 @@ public class ThreadManager {
                             if (path.isEmpty()) {
                                 continue;
                             }
-                            logger.info("Scan duplicates in {}", path);
+                            logger.info("Scan files in {}", path);
                             executorService.submit(() -> fileScanner.scanFiles(path, filesByName));
                         }
                     }
@@ -108,7 +107,7 @@ public class ThreadManager {
         try {
             executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
-            logger.error("Interrupt scan duplicates files", e);
+            logger.error("Interrupt scan files", e);
         }
 
         return filesByName;

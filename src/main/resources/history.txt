@@ -25,7 +25,7 @@ Refreshes after actions.
 Feature	Details
 Remember Last Selected Paths	Stores last-used source/destination paths.
 Selective Copying with Checkboxes	Checkbox disables if file already copied.
-Tab-Dependent UI Elements	"Copy" and "Duplicate" buttons toggle based on selected tab.
+Tab-Dependent UI Elements	"Copy" and "Duplicate" buttons toggle based on selected actionTab.
 Select All Checkbox	Syncs with table rows. Supports manual uncheck logic.
 Keyboard Shortcuts	Pressing space toggles checkbox selection on selected rows.
 
@@ -146,7 +146,9 @@ Generated a history log of all major tasks and resolved issues.
 - version 1.1
 - start refactoring ui.CopyFileScannerSwingUI class into many classes.
 - added to GIT.
-2025.06.12,17,18
+2025.06.12,17,18,20,24,30
+- refactoring to split to many classes.
+2025.07.03,04,21,25
 - refactoring to split to many classes.
 
 

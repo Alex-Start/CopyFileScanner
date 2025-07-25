@@ -1,66 +1,424 @@
 package controller;
 
-import common.ActionTab;
-import file.CopyFileScanner;
-import file.DuplicateFileScanner;
+import common.ActionHelper;
+import common.ActionTabWrap;
+import file.*;
+import model.FileEntry;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import service.FileActionService;
+import service.IFileActionProgressCallback;
+import service.IScanProgressCallback;
 import ui.*;
 import ui.table.FileTableModel;
+import utils.FileUtils;
 
 import javax.swing.*;
-import javax.swing.table.TableRowSorter;
 import java.awt.event.ActionEvent;
+import java.io.File;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 
-import static ui.CopyFileScannerSwingUI.*;
+import static common.ActionHelper.Action.*;
+import static common.ActionTabWrap.ActionTab.DUPLICATE;
 
-public class FileOperationController {
+public class FileOperationController implements IScanProgressCallback, IFileActionProgressCallback {
     private static final Logger logger = LogManager.getLogger(FileOperationController.class);
 
     private final JTabbedPane tabbedPane;
-    private final FileTableCellEditor fileTableCellEditor;
-    private final StatusBarPanel statusBarPanel;
-    private final ActionTab ACTION_TAB;
-    private final ButtonsManager buttonsManager;
+    private final IStatusBarUpdater statusBarUpdater;
+    private final ActionTabWrap actionTab;
     private final MessageDialog messageDialog;
 
     private static FileOperationController fileOperationController;
 
-    private static final Map<ActionTab.Tab, TabPanel> tabPanel = new HashMap<>();
+    private static final Map<ActionTabWrap.ActionTab, ITabPanel> tabPanel = new HashMap<>();
 
-    public static FileOperationController getFileOperationController(JTabbedPane tabbedPane, ButtonsManager buttonsManager, StatusBarPanel statusBarPanel, ActionTab actionTab, CopyFileScannerSwingUI copyFileScannerSwingUI) {
+
+    private final AtomicBoolean scanInProgress = new AtomicBoolean(false);
+    private final AtomicBoolean actionInProgress = new AtomicBoolean(false);
+
+    // Constants for comments
+    private static final String COPIED_STATUS = ActionTabWrap.ActionTab.COPY.getValue();
+    private static final String DELETED_STATUS_SUFFIX = " Deleted";
+
+//    private final ITableUpdater tableUpdater;
+    private final Preferences preferences;
+//    private final MessageDialog messageDialog;
+//    private final SettingsManager settingsManager;
+
+//    private CopyFileScanner copyFileScanner;
+//    private DuplicateFileScanner duplicateFileScanner;
+    private FileActionConcurrently fileActionConcurrently;
+
+    /*public FileOperationController(IStatusBarUpdater statusBarUpdater, ITableUpdater tableUpdater,
+                                   Preferences preferences, MessageDialog messageDialog,
+                                   ActionTabWrap actionTab, SettingsManager settingsManager) {
+        this.statusBarUpdater = Objects.requireNonNull(statusBarUpdater);
+//        this.tableUpdater = Objects.requireNonNull(tableUpdater);
+        this.preferences = Objects.requireNonNull(preferences);
+        this.messageDialog = Objects.requireNonNull(messageDialog);
+        this.actionTab = Objects.requireNonNull(actionTab);
+//        this.settingsManager = Objects.requireNonNull(settingsManager);
+
+        // Inject callbacks into scanners/action classes
+        this.copyFileScanner = new CopyFileScanner(this);
+        this.duplicateFileScanner = new DuplicateFileScanner(this);
+        this.fileActionConcurrently = new FileActionConcurrently(this);
+    }*/
+
+    // --- UI Action Handlers ---
+    public void handleScanDifferences(String sourceDir, String destDir, boolean checkSource) {
+        if (scanInProgress.get() || actionInProgress.get()) {
+            messageDialog.showMessageDialog("A scan or file action is already in progress.");
+            return;
+        }
+        if (!FileUtils.checkDirPath(sourceDir) || !FileUtils.checkDirPath(destDir)) {
+            messageDialog.showMessageDialog("Please provide valid source and destination directories.");
+            return;
+        }
+
+        //actionTab.setActionName(ActionTabWrap.ActionTab.COPY);
+        statusBarUpdater.cleanupProgressBar();
+        tabbedPane.setEnabled(false);
+        getTableUpdater().disableButtonsAndClearTable();
+        scanInProgress.set(true);
+
+        // Run scanning in a background thread via SwingWorker
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                new CopyFileScanner(FileOperationController.this).scanAndCompare(sourceDir, destDir, checkSource, ActionTabWrap.ActionTab.COPY);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                tabbedPane.setEnabled(true);
+                scanInProgress.set(false);
+            }
+        };
+        worker.execute();
+    }
+
+    public void handleScanDuplicates(String sourceDir) {
+        if (scanInProgress.get() || actionInProgress.get()) {
+            messageDialog.showMessageDialog("A scan or file action is already in progress.");
+            return;
+        }
+        if (!FileUtils.checkDirPath(sourceDir)) {
+            messageDialog.showMessageDialog("Please provide a valid source directory.");
+            return;
+        }
+
+        //actionTab.setActionName(DUPLICATE);
+        statusBarUpdater.cleanupProgressBar();
+        tabbedPane.setEnabled(false);
+        getTableUpdater().disableButtonsAndClearTable();
+        statusBarUpdater.startStartTime();
+        scanInProgress.set(true);
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                new DuplicateFileScanner(FileOperationController.this).findDuplicateFiles(sourceDir, DUPLICATE);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                tabbedPane.setEnabled(true);
+                scanInProgress.set(false);
+            }
+        };
+        worker.execute();
+    }
+
+    public void handleCopySelectedFiles(String sourceDir, String destDir) {
+        performFileAction(COPY, sourceDir, destDir, ActionTabWrap.ActionTab.COPY);
+    }
+
+    public void handleDeleteSourceFiles(String sourceDir, ActionTabWrap.ActionTab tab) {
+        performFileAction(DELETE_SOURCE, sourceDir, null, tab);
+    }
+
+    public void handleDeleteDestFiles(String destDir, ActionTabWrap.ActionTab tab) {
+        performFileAction(DELETE_DEST, null, destDir, tab);
+    }
+
+    private void performFileAction(ActionHelper.Action actionType, String sourceDir, String destDir, ActionTabWrap.ActionTab tab) {
+        if (scanInProgress.get() || actionInProgress.get()) {
+            messageDialog.showMessageDialog("A scan or file action is already in progress.");
+            return;
+        }
+
+        //actionTab.setActionName(tab);
+        statusBarUpdater.cleanupProgressBar();
+        tabbedPane.setEnabled(false);
+        getTableUpdater().disablePanelAndButtons(); // Disable relevant panel and its buttons
+        statusBarUpdater.cleanupStartTime();
+        actionInProgress.set(true);
+
+        FileTableModel currentTableModel = getActiveTabPanel().getTableFactory().getTableModel();
+        fileActionConcurrently = new FileActionConcurrently(actionType, sourceDir, destDir, currentTableModel, tab, this);
+        fileActionConcurrently.performFileAction();
+    }
+
+    public void handleSelectAllToggle(ActionTabWrap.ActionTab tab, boolean selected) {
+        getTableUpdater().toggleAllCheckboxes(tab, selected);
+        updateStatusBarCounts(tab); // Refresh counts after toggling
+    }
+
+    public void handleTableCheckboxChange(ActionTabWrap.ActionTab tab) {
+        updateStatusBarCounts(tab);
+    }
+
+    public void handleTabChange(/*int selectedTabIndex*/) {
+        //actionTab.setActionName(selectedTabIndex == 0 ? ActionTabWrap.ActionTab.COPY : ActionTabWrap.ActionTab.DUPLICATE);//TODO
+        getActiveTabPanel().getFileTableCellEditor().checkCheckBoxesAndEnableButtons();
+        updateStatusBarCounts(actionTab.getActionName());
+        statusBarUpdater.cleanupProgressBar(); // Clear progress bar on tab change
+    }
+
+    public void saveApplicationState() {
+        preferences.put("selectedTab", String.valueOf(actionTab.getActionName().ordinal()));
+        // You can save source/dest paths here from the UI panels
+        // Example: preferences.put("sourceDirCopy", findCopyPanel.getSourceDir());
+        // For table data, you'd need a SerializationService which interacts with FileTableModel
+        //TODO
+    }
+
+    public void loadApplicationState() {
+        // Load initial selected tab
+        int selectedTab = Integer.parseInt(preferences.get("selectedTab", "0"));
+        //actionTab.setActionName(selectedTab == 0 ? ActionTabWrap.ActionTab.COPY : ActionTabWrap.ActionTab.DUPLICATE);
+        // Load paths into UI panels
+        // Example: findCopyPanel.setSourceDir(preferences.get("sourceDirCopy", ""));
+        // Load table data
+        //TODO
+    }
+
+
+    // --- Internal Helper Methods ---
+
+    private void updateStatusBarCounts(ActionTabWrap.ActionTab tab) {
+        FileTableModel currentTableModel = getActiveTabPanel().getTableFactory().getTableModel();
+        int totalRows = currentTableModel.getRowCount();
+        int selectedRows = currentTableModel.getSelectedRows().size(); // Get actual selected rows from model
+
+        statusBarUpdater.updateTotalRows(totalRows);
+        statusBarUpdater.updateSelectedFiles(selectedRows);
+        statusBarUpdater.updateDuration();
+        //statusBarPanel.updateProgressBar(...);
+        //statusBarPanel.refreshStatusBar();
+    }
+
+    // --- IScanProgressCallback Implementation (Called by CopyFileScanner/DuplicateFileScanner) ---
+
+    @Override
+    public void onScanStarted(String message, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            statusBarUpdater.startStartTime();
+            statusBarUpdater.updateMessage(message);
+            statusBarUpdater.cleanupProgressBar();
+        });
+    }
+
+    private long lastUpdate = 0;
+
+    @Override
+    public void onScanProgress(int percentage, ActionTabWrap.ActionTab tab) {
+        long now = System.currentTimeMillis();
+        if (percentage == 100 || now - lastUpdate > 100) { // update at most every 100 ms or for 100%
+            lastUpdate = now;
+
+            SwingUtilities.invokeLater(() -> {
+                statusBarUpdater.updateProgressBar(percentage);
+                statusBarUpdater.updateMessage("Scanning... " + percentage + "% Time: " + statusBarUpdater.getDurationString());
+            });
+        }
+    }
+
+    @Override
+    public void onScanCompletedCopy(Map<String, String> differences, ActionTabWrap.ActionTab tab, String message) {
+        SwingUtilities.invokeLater(() -> {
+            getTableUpdater().updateCopyTable(convertDifferencesToEntries(differences, getSourceDir(tab), getDestDir(tab)));
+            updateStatusBarCounts(tab);
+            statusBarUpdater.updateDuration();
+            statusBarUpdater.updateMessage(message);
+            //statusBarUpdater.updateProgressBar(100);
+            getTableUpdater().enablePanelAndButtons();
+            tabbedPane.setEnabled(true);
+            scanInProgress.set(false);
+        });
+    }
+
+    @Override
+    public void onScanCompletedDuplicates(Map<String, List<String>> duplicates, ActionTabWrap.ActionTab tab, String message) {
+        SwingUtilities.invokeLater(() -> {
+            getTableUpdater().updateDuplicateTable(convertDuplicatesToEntries(duplicates));
+            updateStatusBarCounts(tab);
+            statusBarUpdater.updateDuration();
+            statusBarUpdater.updateMessage(message);
+            //statusBarUpdater.updateProgressBar(100);
+            getTableUpdater().enablePanelAndButtons();
+            tabbedPane.setEnabled(true);
+            scanInProgress.set(false);
+        });
+    }
+
+    @Override
+    public void onScanError(String errorMessage, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            messageDialog.showMessageDialog("Scan Error: " + errorMessage);
+            statusBarUpdater.updateMessage("Scan Failed: " + errorMessage);
+            //statusBarUpdater.cleanupProgressBar(); // Reset progress
+            getTableUpdater().enablePanelAndButtons();
+            tabbedPane.setEnabled(true);
+            scanInProgress.set(false);
+        });
+    }
+
+    // --- IFileActionProgressCallback Implementation (Called by FileActionConcurrently) ---
+
+    @Override
+    public void onActionStarted(String message, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            statusBarUpdater.updateMessage(message);
+            statusBarUpdater.updateProgressBar(0);
+        });
+    }
+
+    @Override
+    public void onActionProgress(int percentage, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            statusBarUpdater.updateProgressBar(percentage);
+            statusBarUpdater.updateMessage("Processing files... " + percentage + "%");
+        });
+    }
+
+    @Override
+    public void onFileProcessed(int rowIndex, String status, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            getTableUpdater().markTableRowProcessed(tab, rowIndex, status);
+            updateStatusBarCounts(tab); // Update counts as items are processed/unselected
+        });
+    }
+
+    @Override
+    public void onActionCompleted(String message, String warning, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            statusBarUpdater.updateDuration();
+            statusBarUpdater.updateMessage(message);
+            //statusBarUpdater.updateProgressBar(100);
+            getTableUpdater().enablePanelAndButtons();
+            tabbedPane.setEnabled(true);
+            actionInProgress.set(false);
+            if (warning != null && !warning.isEmpty()) {
+                messageDialog.showMessageDialog(warning);
+            }
+        });
+    }
+
+    @Override
+    public void onActionError(String errorMessage, ActionTabWrap.ActionTab tab) {
+        SwingUtilities.invokeLater(() -> {
+            messageDialog.showMessageDialog("Action Error: " + errorMessage);
+            statusBarUpdater.updateMessage("Action Failed: " + errorMessage);
+            statusBarUpdater.updateProgressBar(0); // Reset progress
+            getTableUpdater().enablePanelAndButtons();
+            tabbedPane.setEnabled(true);
+            actionInProgress.set(false);
+        });
+    }
+
+    // --- Conversion Methods (Can be moved to a data converter utility if more complex) ---
+
+    private List<FileEntry> convertDifferencesToEntries(Map<String, String> differences, String sourceDir, String destDir) {
+        List<FileEntry> entries = new ArrayList<>();
+        for (Map.Entry<String, String> entry : differences.entrySet()) {
+            // Assuming entry.getKey() is relative path, entry.getValue() is destination path
+            Path path = Path.of(entry.getKey());
+            // sourceDir = folder
+            String folder = path.getParent() == null ? "" : path.getParent().toString();
+
+            entries.add(new FileEntry(false, folder, path.getFileName().toString(), entry.getValue()));
+        }
+        return entries;
+    }
+
+    private List<FileEntry> convertDuplicatesToEntries(Map<String, List<String>> duplicates) {
+        List<FileEntry> entries = new ArrayList<>();
+
+        int i = 0;
+        for (Map.Entry<String, List<String>> entry : duplicates.entrySet()) {
+            i++;
+            for (String destPath : entry.getValue()) {
+                Path path = Path.of(destPath);
+                String folder = path.getParent() == null ? "" : path.getParent().toString();
+                entries.add(new FileEntry(false, folder, path.getFileName().toString(), "# "+ i));
+            }
+        }
+        return entries;
+    }
+
+    // --- Placeholder Methods for getting current directory paths from UI ---
+    // In a full implementation, these would be passed from the UI panels or managed by the controller
+    // if the controller directly holds references to the text fields.
+    // For this example, these are just placeholders.
+    private String getSourceDir(ActionTabWrap.ActionTab tab) {
+        // This should be retrieved from the respective UI panel (FindCopyPanel/FindDuplicatePanel)
+        // For now, return a placeholder or previously saved preference.
+        if (tab == ActionTabWrap.ActionTab.COPY) {
+            return preferences.get("sourceDirCopy", "").trim();
+        } else if (tab == DUPLICATE) {
+            return preferences.get("sourceDirDupl", "").trim();
+        }
+        return "";
+    }
+
+    private String getDestDir(ActionTabWrap.ActionTab tab) {
+        // This should be retrieved from the FindCopyPanel
+        if (tab == ActionTabWrap.ActionTab.COPY) {
+            return preferences.get("destDirCopy", "").trim();
+        }
+        return "";
+    }
+
+
+//======================== my version =========================== TODO refactor with new above one
+    public static FileOperationController getFileOperationController(JTabbedPane tabbedPane, ButtonsManager buttonsManager, IStatusBarUpdater statusBarPanel, ActionTabWrap actionTabWrap, CopyFileScannerSwingUI copyFileScannerSwingUI) {
         if (fileOperationController == null) {
-            FileTableCellEditor fileTableCellEditor = new FileTableCellEditor(actionTab, buttonsManager, statusBarPanel);
+//            FileTableCellEditor fileTableCellEditor = new FileTableCellEditor(actionTabWrap, buttonsManager, statusBarPanel);
             Preferences prefs = Preferences.userNodeForPackage(CopyFileScannerSwingUI.class);
             MessageDialog messageDialog = new MessageDialog(copyFileScannerSwingUI);
-            fileOperationController = new FileOperationController(tabbedPane, fileTableCellEditor, statusBarPanel, actionTab, messageDialog);
+            fileOperationController = new FileOperationController(tabbedPane, statusBarPanel, actionTabWrap, messageDialog, prefs);
             buttonsManager.addActionListener(fileOperationController);
 
             // Create tabs
-            tabPanel.put(ActionTab.Tab.COPY, new FindCopyPanel(prefs, fileTableCellEditor, statusBarPanel, fileOperationController));
-            tabPanel.put(ActionTab.Tab.DUPLICATE, new FindDuplicatePanel(prefs, fileTableCellEditor, statusBarPanel, fileOperationController));
+            tabPanel.put(ActionTabWrap.ActionTab.COPY, new FindCopyPanel(prefs, buttonsManager, statusBarPanel, fileOperationController));
+            tabPanel.put(DUPLICATE, new FindDuplicatePanel(prefs, buttonsManager, statusBarPanel, fileOperationController));
         }
 
         return fileOperationController;
     }
 
-    public FileOperationController(JTabbedPane tabbedPane, FileTableCellEditor fileTableCellEditor, StatusBarPanel statusBarPanel, ActionTab actionTab, MessageDialog messageDialog) {
+    public FileOperationController(JTabbedPane tabbedPane, IStatusBarUpdater statusBarUpdater, ActionTabWrap actionTabWrap, MessageDialog messageDialog, Preferences preferences) {
         this.tabbedPane = tabbedPane;
-        this.fileTableCellEditor = fileTableCellEditor;
-        this.statusBarPanel = statusBarPanel;
-        ACTION_TAB = actionTab;
-        this.buttonsManager = fileTableCellEditor.getButtonsManager();
+        this.statusBarUpdater = statusBarUpdater;
+        actionTab = actionTabWrap;
         this.messageDialog = messageDialog;
+        this.preferences = preferences;
+    }
+
+    public ITableUpdater getTableUpdater() {
+        return this.getActiveTabPanel().getTableUpdater();
+    }
+
+    public void toggleComponents() {
+        getActiveTabPanel().getFileTableCellEditor().checkCheckBoxesAndEnableButtons();
+        ((StatusBarPanel)statusBarUpdater).refreshStatusBar();
     }
 
     public static JTable getTable() {
@@ -71,162 +429,25 @@ public class FileOperationController {
         return (FileTableModel) getTable().getModel();
     }
 
-    public static String getFullFilePath(int columnIndex, int modelRowIndex) {
-        String relativePath = getTableModel().getListPaths().get(modelRowIndex);
-        if (columnIndex < 0) {
-            return relativePath;
-        }
-        return Path.of(fileOperationController.getActiveTabPanel().getRootPath(columnIndex), relativePath).toString(); // Retrieve full file path
-    }
-
     public void scanDifferences(ActionEvent e) {
-        String sourceDir = fileOperationController.getCopyPanel().getSourceField().getText();
-        String destDir = fileOperationController.getCopyPanel().getDestField().getText();
+        String sourceDir = fileOperationController.getCopyPanel().getSourceField().getText().trim();
+        String destDir = fileOperationController.getCopyPanel().getDestField().getText().trim();
         if (sourceDir.isEmpty() || destDir.isEmpty()) {
             messageDialog.showMessageDialog("Please select both directories.");
             return;
         }
 
-        // Disable scan button while scanning
-        fileOperationController.disableButtonsAndClearTable();
-
-        new Thread(() -> {
-            SwingUtilities.invokeLater(() -> statusBarPanel.getMessageLabel().setText("Start scan differences..."));
-            AtomicBoolean scanningFinished = new AtomicBoolean(false);
-            ExecutorService executorService = Executors.newFixedThreadPool(3);
-            AtomicReference<Map<String, String>> differences = new AtomicReference<>();
-            executorService.submit(() -> {
-                logger.debug("Started scanning...");
-                differences.set(CopyFileScanner.scanAndCompare(sourceDir, destDir, ((FindCopyPanel) fileOperationController.getActiveTabPanel()).isSelectedCheckSource()));
-                logger.debug("Scan is finished.");
-                scanningFinished.set(true);
-            });
-            executorService.submit(() -> statusBarPanel.upDownProgressBar(scanningFinished));
-            executorService.submit(() -> {
-                while(!scanningFinished.get()) {
-                    statusBarPanel.updateDuration();
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                }
-            });
-
-            executorService.shutdown();
-
-            // Wait until scanningFinished becomes true
-            while (!scanningFinished.get()) {
-                try {
-                    Thread.sleep(500); // or shorter if needed
-                } catch (InterruptedException ex) {
-                    logger.warn("Interrupted while waiting for scanning to finish.");
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            SwingUtilities.invokeLater(() -> {
-                logger.debug("Add {} differences in table...", differences.get().size());
-                statusBarPanel.getMessageLabel().setText("Add "+ differences.get().size() +" differences in table...");
-                statusBarPanel.getProgressBar().setValue(0);
-                JTable fileTableCopy = fileOperationController.getCopyPanel().getJTable();
-                FileTableModel tableModel = (FileTableModel)fileTableCopy.getModel();
-                tableModel.addDifferences(differences.get());
-
-                statusBarPanel.getProgressBar().setValue((int) ((tableModel.getRowCount() / (double) differences.get().size()) * 100));
-
-                // **Reset sorting to avoid index mismatches**
-                TableRowSorter<?> sorter = (TableRowSorter<?>) fileTableCopy.getRowSorter();
-                sorter.setSortKeys(null); // **Reset sorting to natural order**
-
-                statusBarPanel.getMessageLabel().setText("Added "+ differences.get().size() +" differences in table (duration: "+ statusBarPanel.getDurationString() +")");
-
-                // **Re-enable buttons after scan**
-                fileOperationController.enablePanelAndButtons(!tableModel.getListPaths().isEmpty());
-                statusBarPanel.updateStatusPanel(tableModel.getListPaths().size());
-            });
-            statusBarPanel.setAndRefreshProgressBar(100);
-        }).start();
-
-        SwingUtilities.invokeLater(() -> statusBarPanel.getMessageLabel().setText("End scan differences..."));
+        handleScanDifferences(sourceDir, destDir, ((FindCopyPanel) fileOperationController.getActiveTabPanel()).isSelectedCheckSource());
     }
 
     public void scanDuplicates(ActionEvent e) {
-        String sourceDir = fileOperationController.getDuplicatePanel().getSourceField().getText();
+        String sourceDir = fileOperationController.getDuplicatePanel().getSourceField().getText().trim();
         if (sourceDir.isEmpty()) {
             messageDialog.showMessageDialog("Please select source directory.");
             return;
         }
 
-        // Disable scan button while scanning
-        fileOperationController.disableButtonsAndClearTable();
-
-        new Thread(() -> {
-            SwingUtilities.invokeLater(() -> statusBarPanel.getMessageLabel().setText("Start scan duplicates..."));
-            AtomicBoolean scanningFinished = new AtomicBoolean(false);
-            ExecutorService executorService = Executors.newFixedThreadPool(3);
-            AtomicReference<Map<String, List<String>>> duplicates = new AtomicReference<>();
-            executorService.submit(() -> {
-//                long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
-//                logger.debug("Used memory: {} MB", usedMem);
-                logger.debug("Started scanning...");
-                duplicates.set(DuplicateFileScanner.findDuplicateFiles(sourceDir));
-                logger.debug("Scan is finished.");
-//                usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
-//                logger.debug("Used memory: {} MB", usedMem);
-                scanningFinished.set(true);
-            });
-            executorService.submit(() -> statusBarPanel.upDownProgressBar(scanningFinished));
-            executorService.submit(() -> {
-                while(!scanningFinished.get()) {
-                    statusBarPanel.updateDuration();
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                }
-            });
-
-            executorService.shutdown();
-
-            // Wait until scanningFinished becomes true
-            while (!scanningFinished.get()) {
-                try {
-                    Thread.sleep(500); // or shorter if needed
-                } catch (InterruptedException ex) {
-                    logger.warn("Interrupted while waiting for scanning to finish.");
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            SwingUtilities.invokeLater(() -> {
-                logger.debug("Add {} duplicates in table...", duplicates.get().size());
-                statusBarPanel.getMessageLabel().setText("Add "+ duplicates.get().size() +" duplicates in table...");
-                statusBarPanel.getProgressBar().setValue(0);
-                JTable fileTableDupl = fileOperationController.getCopyPanel().getJTable();
-                FileTableModel tableModel = (FileTableModel) fileTableDupl.getModel();
-                tableModel.addDuplicates(duplicates.get());
-
-                statusBarPanel.getProgressBar().setValue((int) ((tableModel.getRowCount() / (double) duplicates.get().size()) * 100));
-
-                // **Reset sorting to avoid index mismatches**
-                TableRowSorter<?> sorter = (TableRowSorter<?>) fileTableDupl.getRowSorter();
-                sorter.setSortKeys(null); // **Reset sorting to natural order**
-
-                statusBarPanel.getMessageLabel().setText("Added "+ duplicates.get().size() +" duplicates in table (duration: "+ statusBarPanel.getDurationString()+")");
-
-                // **Re-enable buttons after scan**
-                fileOperationController.enablePanelAndButtons(false);
-                statusBarPanel.updateStatusPanel(((FileTableModel)fileTableDupl.getModel()).getListPaths().size());
-
-            });
-            statusBarPanel.setAndRefreshProgressBar(100);
-        }).start();
-
-        SwingUtilities.invokeLater(() -> statusBarPanel.getMessageLabel().setText("End scan duplicates..."));
+        handleScanDuplicates(sourceDir);
     }
 
     public void copyFiles(ActionEvent e) {
@@ -237,162 +458,84 @@ public class FileOperationController {
             return;
         }
 
-        Map<Integer, String> selectedRows  = fileOperationController.getSelectedRows();
-        if (selectedRows.isEmpty()) {
-            messageDialog.showMessageDialog("No files selected for copying.");
-            return;
-        }
+//        Map<Integer, String> selectedRows  = getTableModel().getSelectedRows();
+//        if (selectedRows.isEmpty()) {
+//            messageDialog.showMessageDialog("No files selected for copying.");
+//            return;
+//        }
 
-        fileOperationController.disableButtonsCleanUpProgressBar();
+//        tabbedPane.setEnabled(false);
+//        fileOperationController.getActiveTabPanel().getFileTableCellEditor().disableButtonsCleanUpProgressBar();
 
-        new FileActionService(statusBarPanel, messageDialog)
-                .executeFileCopier(sourceDir, destDir, selectedRows);
+//        new FileActionService(statusBarUpdater, messageDialog)
+//                .executeFileCopier(sourceDir, destDir, selectedRows);
+        handleCopySelectedFiles(sourceDir, destDir);
     }
 
     public void deleteSourceFiles(ActionEvent e) {
-        deleteFiles(FILE_INDEX_COLUMN);
+
+//        deleteFiles(FILE_INDEX_COLUMN);
+        if (ActionTabWrap.ActionTab.COPY.equals(getActionTabHelper().getActionName())) {
+            String sourceDir = fileOperationController.getActiveTabPanel().getSourceFieldText();
+            if (sourceDir.isEmpty()) {
+                messageDialog.showMessageDialog("Please select Source directories.");
+                return;
+            }
+            handleDeleteSourceFiles(sourceDir, ActionTabWrap.ActionTab.COPY);
+        } else {
+            // For duplicates, the sourceDir passed to fileActionConcurrently is the root folder.
+            // The actual paths to delete are in the table data's 'folder' and 'filename' fields.
+            handleDeleteSourceFiles(null, DUPLICATE);
+        }
     }
 
     public void deleteDestFiles(ActionEvent e) {
-        deleteFiles(COMMENT_INDEX_COLUMN);
-    }
 
-    private void deleteFiles(int columnIndex) {
-        Map<Integer, String> selectedRows  = fileOperationController.getSelectedRows(columnIndex);
-        if (selectedRows.isEmpty()) {
-            messageDialog.showMessageDialog("No files selected for deleting.");
-            return;
+//        deleteFiles(COMMENT_INDEX_COLUMN);
+        if (ActionTabWrap.ActionTab.COPY.equals(getActionTabHelper().getActionName())) {
+            String destDir = fileOperationController.getActiveTabPanel().getDestFieldText();
+            if (destDir.isEmpty()) {
+                messageDialog.showMessageDialog("Please select both directories.");
+                return;
+            }
+            handleDeleteDestFiles(destDir, ActionTabWrap.ActionTab.COPY);
+        } else {
+            handleDeleteDestFiles(null, DUPLICATE);
         }
-
-        fileOperationController.disableButtonsCleanUpProgressBar();
-
-        new FileActionService(statusBarPanel, messageDialog)
-                .executeFileDeleter(columnIndex, selectedRows);
     }
 
-    public void disableButtonsAndClearTable() {
-        FileTableModel tableModel = getTableModel();
-        tableModel.setRowCount(0); // **Clear old data**
-        if (fileOperationController.getActionTabHelper().isEqual(ActionTab.Tab.COPY)) {
-            ((FindCopyPanel) fileOperationController.getActiveTabPanel()).setSelectAllCheckbox(false);
-        }
-        getTableModel().getListPaths().clear();// **Clear old file paths**
+//    private void deleteFiles(int columnIndex) {
+//        Map<Integer, String> selectedRows  = getTableModel().getSelectedRows();
+//        if (selectedRows.isEmpty()) {
+//            messageDialog.showMessageDialog("No files selected for copying.");
+//            return;
+//        }
+//
+//        tabbedPane.setEnabled(false);
+//        fileOperationController.getActiveTabPanel().getFileTableCellEditor().disableButtonsCleanUpProgressBar();
+//
+//        new FileActionService(statusBarUpdater, messageDialog)
+//                .executeFileDeleter(columnIndex, selectedRows);
+//    }
 
-        disableButtonsCleanUpProgressBar();
-        statusBarPanel.updateTotalLabel(0);
+    public JTabbedPane getTabbedPane() {
+        return tabbedPane;
     }
 
-    public void disableButtonsCleanUpProgressBar() {
-        disablePanelAndButtons();
-        statusBarPanel.setAndRefreshProgressBar(0);
-        statusBarPanel.cleanupStartTime();
-    }
-
-    public void enablePanelAndButtons() {
-        enablePanelAndButtons(true);
-    }
-
-    public void enablePanelAndButtons(boolean enableSelectAllCheckbox) {
-        tabbedPane.setEnabled(true);
-        fileOperationController.getActiveTabPanel().enablePanelAndButtons(enableSelectAllCheckbox);
-        checkCheckBoxes();
-        statusBarPanel.setAndRefreshProgressBar(100);
-    }
-
-    private void disablePanelAndButtons() {
-        tabbedPane.setEnabled(false);
-        fileOperationController.getActiveTabPanel().disablePanelAndButtons();
-        buttonsManager.disablePanelAndButtons();
-    }
-
-    public TabPanel getActiveTabPanel() {
+    public ITabPanel getActiveTabPanel() {
         return tabPanel.get(getActionTabHelper().getActionName());
     }
 
-    public ActionTab getActionTabHelper() {
-        return ACTION_TAB;
+    public ActionTabWrap getActionTabHelper() {
+        return actionTab;
     }
 
     public FindCopyPanel getCopyPanel() {
-        return ((FindCopyPanel)tabPanel.get(ActionTab.Tab.COPY));
+        return ((FindCopyPanel)tabPanel.get(ActionTabWrap.ActionTab.COPY));
     }
 
     public FindDuplicatePanel getDuplicatePanel() {
-        return ((FindDuplicatePanel)tabPanel.get(ActionTab.Tab.DUPLICATE));
+        return ((FindDuplicatePanel)tabPanel.get(DUPLICATE));
     }
 
-    public void checkCheckBoxes() {
-        boolean allChecked = true;
-        boolean anyChecked = false;
-        int count = 0;
-        FileTableModel tableModel = getTableModel();
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
-            if (tableModel.isSkipCheckBoxCondition(i)) {
-                continue;
-            }
-            Object checkBoxValue = tableModel.getValueAt(i, CHECKBOX_INDEX_COLUMN);
-            if (checkBoxValue == null) continue;
-            boolean checked = (Boolean) checkBoxValue;
-            if (checked) {
-                count++;
-            }
-            anyChecked |= checked;
-            allChecked &= checked;
-        }
-
-        if (ACTION_TAB.isEqual(ActionTab.Tab.COPY)) {
-            fileTableCellEditor.getButtonsManager().getCopyButton().setEnabled(anyChecked);
-            fileTableCellEditor.getButtonsManager().getDeleteDestButton().setEnabled(anyChecked);
-            ((FindCopyPanel) fileOperationController.getActiveTabPanel()).setSelectAllCheckbox(allChecked);
-        } else {
-            fileTableCellEditor.getButtonsManager().getCopyButton().setEnabled(false);
-            fileTableCellEditor.getButtonsManager().getDeleteDestButton().setEnabled(false);
-        }
-        fileTableCellEditor.getButtonsManager().getDeleteSourceButton().setEnabled(anyChecked);
-        statusBarPanel.setAndRefreshSelect(count);
-    }
-
-    /**
-     * Delete checkboxes for copied/deleted
-     * @param rowIndex
-     * @param value - COPIED/DELETED values for the comment
-     */
-    public void markFileAsPassed(int rowIndex, String value) {
-        SwingUtilities.invokeLater(() -> {
-            JTable table = getActiveTabPanel().getJTable();
-            FileTableModel tableModel = (FileTableModel) table.getModel();
-            if (rowIndex < tableModel.getRowCount()) {
-                tableModel.setValueAt(null, rowIndex, CHECKBOX_INDEX_COLUMN); // Remove checkbox
-                String newValue = value;
-                if (fileOperationController.getActionTabHelper().isEqual(ActionTab.Tab.DUPLICATE)) {
-                    newValue = tableModel.getValueAt(rowIndex, COMMENT_INDEX_COLUMN) + " - "+ newValue;
-                }
-                tableModel.setValueAt(newValue, rowIndex, COMMENT_INDEX_COLUMN); // Mark as passed
-                checkCheckBoxes(); // Update 'Select All' and 'Copy/Delete' button state
-                table.repaint(); // Refresh table display
-            }
-        });
-    }
-
-    /**
-     * Get map of selected rows
-     * @return - rowIndex, path - short relative path for COPY, and full path for DUPLICATE.
-     */
-    public Map<Integer, String> getSelectedRows() {
-        return getSelectedRows(-1);
-    }
-    public Map<Integer, String> getSelectedRows(int columnIndex) {
-        Map<Integer, String> selectedRows  = new HashMap<>();
-        JTable table = getActiveTabPanel().getJTable();
-        FileTableModel tableModel = (FileTableModel) table.getModel();
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
-            int modelRowIndex = table.convertRowIndexToModel(i); // Convert to model index
-            Object checkBoxValue = tableModel.getValueAt(modelRowIndex, CHECKBOX_INDEX_COLUMN);
-            if (checkBoxValue != null && (Boolean) checkBoxValue) {
-                selectedRows.put(modelRowIndex, getFullFilePath(columnIndex, modelRowIndex));
-            }
-        }
-
-        return selectedRows;
-    }
 }
