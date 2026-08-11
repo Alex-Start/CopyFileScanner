@@ -31,6 +31,12 @@ public class ButtonsManager {
         return copyButton;
     }
 
+    public void setEnabled(boolean isSelected) {
+        copyButton.setEnabled(isSelected);
+        deleteSourceButton.setEnabled(isSelected);
+        deleteDestButton.setEnabled(isSelected);
+    }
+
     public JButton getDeleteSourceButton() {
         return deleteSourceButton;
     }

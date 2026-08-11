@@ -1,7 +1,7 @@
 package ui;
 
+import common.ActionTabWrap;
 import controller.FileOperationController;
-import ui.table.FileTableModel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -10,39 +10,60 @@ import java.util.prefs.Preferences;
 import static serializable.SerializeManager.loadDuplicateTableFromFile;
 import static ui.CopyFileScannerSwingUI.SOURCE_DIR_DUPL;
 
-public class FindDuplicatePanel implements TabPanel {
+public class FindDuplicatePanel implements ITabPanel {
     private JTextField sourceFieldDuplicate;
     private JButton sourceButtonDuplicate;
     private JButton duplicateButton;
-    private JTable fileTableDupl;
+    private TableFactory fileTableDupl;
     private final Preferences prefs;
-    private final FileTableCellEditor fileTableCellEditor;
-    private final StatusBarPanel statusBarPanel;
+    private final ITableUpdater fileTableCellEditor;
+    private final IStatusBarUpdater statusBarPanel;
     private final FileOperationController fileOperationController;
 
-    public FindDuplicatePanel(Preferences prefs, FileTableCellEditor fileTableCellEditor, StatusBarPanel statusBarPanel, FileOperationController fileOperationController) {
+    public FindDuplicatePanel(Preferences prefs, ButtonsManager buttonsManager, IStatusBarUpdater statusBarPanel, FileOperationController fileOperationController) {
         this.prefs = prefs;
-        this.fileTableCellEditor = fileTableCellEditor;
         this.statusBarPanel = statusBarPanel;
         this.fileOperationController = fileOperationController;
+        fileTableCellEditor = new FileTableCellEditor(fileOperationController.getActionTabHelper(), buttonsManager, statusBarPanel);
     }
 
     public Preferences getPrefs() {
         return prefs;
     }
 
+    public String getSourceFieldText() {
+        return getSourceField().getText().trim();
+    }
+
+    public String getDestFieldText() {
+        return "";
+    }
+
     public JTextField getSourceField() {
         return sourceFieldDuplicate;
     }
 
+    public TableFactory getTableFactory() {
+        return fileTableDupl;
+    }
+
     @Override
     public JTable getJTable() {
-        return fileTableDupl;
+        return fileTableDupl.getJTable();
     }
 
     @Override
     public String getRootPath(int columnIndex) {
         return "";
+    }
+
+    public FileTableCellEditor getFileTableCellEditor() {
+        return (FileTableCellEditor)fileTableCellEditor;
+    }
+
+    @Override
+    public ITableUpdater getTableUpdater() {
+        return fileTableCellEditor;
     }
 
     public void setEnabledButton() {
@@ -80,11 +101,15 @@ public class FindDuplicatePanel implements TabPanel {
         // Bottom Panel ----
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.add(duplicateButton, BorderLayout.NORTH);
-        fileTableDupl = new TableFactory(fileTableCellEditor, statusBarPanel).createTable();
-        loadDuplicateTableFromFile(fileTableDupl);
-        statusBarPanel.forDuplicate().updateStatusPanel(((FileTableModel)fileTableDupl.getModel()).getListPaths().size());
 
-        bottomPanel.add(new JScrollPane(fileTableDupl), BorderLayout.CENTER);
+        fileTableDupl = new TableFactory(ActionTabWrap.ActionTab.DUPLICATE);
+        ((FileTableCellEditor)fileTableCellEditor).setTablePanel(this);
+        fileTableDupl.addTableListener((FileTableCellEditor)fileTableCellEditor, statusBarPanel);
+
+        loadDuplicateTableFromFile(fileTableDupl.getJTable());
+        ((StatusBarPanel)statusBarPanel).forDuplicate().updateStatusPanel(fileTableDupl.getTableModel().getListPaths().size());
+
+        bottomPanel.add(new JScrollPane(fileTableDupl.getJTable()), BorderLayout.CENTER);
 
         panel.add(bottomPanel, BorderLayout.CENTER);
 
@@ -99,5 +124,9 @@ public class FindDuplicatePanel implements TabPanel {
     public void disablePanelAndButtons() {
         duplicateButton.setEnabled(false);
         duplicateButton.repaint();
+    }
+
+    public void setSelectAllCheckbox(boolean value) {
+        //absent for duplicate table
     }
 }

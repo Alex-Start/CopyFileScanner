@@ -3,8 +3,9 @@ package common;
 public class ActionHelper {
     public enum Action {
         SCAN("Scan"),// scan files in threads
-        COPY("Copied"),// active copy panel
-        DELETE("Deleted");// active dupl. panel
+        COPY("Copy"),// click copy button
+        DELETE_DEST("Delete Destination"),// click Delete button
+        DELETE_SOURCE("Delete Source");// click Delete button
 
         private final String value;
 

@@ -1,9 +1,15 @@
+import common.ActionHelper;
+import common.ActionTabWrap;
 import file.CopyFileScanner;
 import file.FileActionConcurrently;
 import file.FileCopier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import service.IFileActionProgressCallback;
+import service.IScanProgressCallback;
+import ui.FindCopyPanel;
 
+import javax.swing.*;
 import java.util.*;
 
 public class CopyFileScannerConsole {
@@ -32,7 +38,36 @@ public class CopyFileScannerConsole {
             return;
         }
 
-        Map<String, String> differences = CopyFileScanner.scanAndCompare(sourceDir, destDir);
+        Map<String, String> differences = new HashMap<>();
+        IScanProgressCallback callbackScan = new IScanProgressCallback() {
+            @Override
+            public void onScanStarted(String message, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onScanProgress(int percentage, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onScanCompletedCopy(Map<String, String> diff, ActionTabWrap.ActionTab tab, String message) {
+                SwingUtilities.invokeLater(() -> {
+                    differences.putAll(diff);
+                });
+            }
+
+            @Override
+            public void onScanCompletedDuplicates(Map<String, List<String>> duplicates, ActionTabWrap.ActionTab tab, String message) {
+
+            }
+
+            @Override
+            public void onScanError(String errorMessage, ActionTabWrap.ActionTab tab) {
+
+            }
+        };
+        new CopyFileScanner(callbackScan).scanAndCompare(sourceDir, destDir, false, ActionTabWrap.ActionTab.COPY);
 
         if (differences.isEmpty()) {
             logger.info("No differences found. Everything is up to date.");
@@ -67,7 +102,33 @@ public class CopyFileScannerConsole {
             }
         }
 
+        IFileActionProgressCallback callback = new IFileActionProgressCallback() {
+            @Override
+            public void onActionStarted(String message, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onActionProgress(int percentage, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onFileProcessed(int rowIndex, String status, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onActionCompleted(String message, String warning, ActionTabWrap.ActionTab tab) {
+
+            }
+
+            @Override
+            public void onActionError(String errorMessage, ActionTabWrap.ActionTab tab) {
+
+            }
+        };
         // Start copying
-        new FileActionConcurrently(new FileCopier(sourceDir, destDir)).doActionFiles(selectedFiles);
+        new FileActionConcurrently(ActionHelper.Action.COPY, sourceDir, destDir, selectedFiles, ActionTabWrap.ActionTab.COPY, callback).performFileAction();
     }
 }

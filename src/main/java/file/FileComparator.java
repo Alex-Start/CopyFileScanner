@@ -2,6 +2,8 @@ package file;
 
 import settings.PropertyReader;
 
+import java.io.File;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,12 +11,25 @@ import java.util.Objects;
 
 public class FileComparator {
     private boolean isCheckSource = false;
+    private String message;
 
     public FileComparator() {
     }
 
     public FileComparator(boolean isCheckSource) {
         this.isCheckSource = isCheckSource;
+    }
+
+    public boolean isMessage() {
+        return message != null && !message.isEmpty();
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    private void setMessage(String message) {
+        this.message = message;
     }
 
     /**
@@ -29,12 +44,14 @@ public class FileComparator {
 
         // Store source files by relative path
         for (FileMetadata file : sourceFiles) {
-            sourceMap.put(file.getRelativePath(), file);
+            String relativePathAndFile = Path.of(file.getRelativePath().toString(), file.getAbsolutePath().getFileName().toString()).toString();
+            sourceMap.put(relativePathAndFile, file);
         }
 
         // Store destination files by relative path
         for (FileMetadata file : destFiles) {
-            destMap.put(file.getRelativePath(), file);
+            String relativePathAndFile = Path.of(file.getRelativePath().toString(), file.getAbsolutePath().getFileName().toString()).toString();
+            destMap.put(relativePathAndFile, file);
         }
 
         Map<String, String> differences = new HashMap<>();
@@ -44,21 +61,25 @@ public class FileComparator {
             String relativePath = entry.getKey();
             FileMetadata sourceFile = entry.getValue();
             FileMetadata destFile = destMap.get(relativePath);
-            String fileComment = getSourceComment(sourceFile) + getDestinationComment(destFile);
 
-            if (destFile == null) {
-                differences.put(relativePath, "Missing in destination."+ fileComment);
-            } else {
-                if (sourceFile.getSize() != destFile.getSize()) {
-                    differences.put(relativePath, "Size mismatch."+ fileComment);
-                } else if (PropertyReader.getPropertyAsBoolean("compareByLastModified", false)
-                        && sourceFile.getLastModified() != destFile.getLastModified()) {
-                    differences.put(relativePath, "Last modified time mismatch."+ fileComment);
-                } else if (!Objects.equals(sourceFile.getChecksum(), destFile.getChecksum()) || sourceFile.getChecksum().isEmpty()) {
-                    //if error for getting checksum, then checksum is empty
-                    differences.put(relativePath, "Content mismatch."+ getSourceComment(sourceFile) + getDestinationComment(destFile));
-                }
+            boolean res = compare(sourceFile, destFile);
+            if (!res) {
+                differences.put(relativePath, getMessage());
             }
+//            String fileComment = getSourceComment(sourceFile) + getDestinationComment(destFile);
+//            if (destFile == null) {
+//                differences.put(relativePath, "Missing in destination."+ fileComment);
+//            } else {
+//                if (sourceFile.getSize() != destFile.getSize()) {
+//                    differences.put(relativePath, "Size mismatch."+ fileComment);
+//                } else if (PropertyReader.getPropertyAsBoolean("compareByLastModified", false)
+//                        && sourceFile.getLastModified() != destFile.getLastModified()) {
+//                    differences.put(relativePath, "Last modified time mismatch."+ fileComment);
+//                } else if (!Objects.equals(sourceFile.getChecksum(), destFile.getChecksum()) || sourceFile.getChecksum().isEmpty()) {
+//                    //if error for getting checksum, then checksum is empty
+//                    differences.put(relativePath, "Content mismatch."+ getSourceComment(sourceFile) + getDestinationComment(destFile));
+//                }
+//            }
         }
 
         if (isCheckSource) {
@@ -75,15 +96,47 @@ public class FileComparator {
         return differences;
     }
 
-    private String getSourceComment(FileMetadata sourceFile) {
+    public boolean compare(Path sourceFile, Path destFile) {
+        return compare(FileMetadata.getFileMetadata(sourceFile), FileMetadata.getFileMetadata(destFile));
+    }
+
+    public boolean compare(FileMetadata sourceFile, FileMetadata destFile) {
+        String fileComment = getSourceComment(sourceFile) + getDestinationComment(destFile);
+
+        if (destFile == null) {
+            setMessage("Missing in destination."+ fileComment);
+            return false;
+        } else {
+            if (sourceFile == null) {
+                setMessage("Missing in source."+ fileComment);
+                return false;
+            }
+            if (sourceFile.getSize() != destFile.getSize()) {
+                setMessage("Size mismatch."+ fileComment);
+                return  false;
+            } else if (PropertyReader.getPropertyAsBoolean("compareByLastModified", false)
+                    && sourceFile.getLastModified() != destFile.getLastModified()) {
+                setMessage("Last modified time mismatch."+ fileComment);
+                return false;
+            } else if (!Objects.equals(sourceFile.getChecksum(), destFile.getChecksum()) || sourceFile.getChecksum().isEmpty()) {
+                //if error for getting checksum, then checksum is empty
+                setMessage("Content mismatch."+ getSourceComment(sourceFile) + getDestinationComment(destFile));
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static String getSourceComment(FileMetadata sourceFile) {
         return getFileMetadatComment(sourceFile, " Source: ", ".");
     }
 
-    private String getDestinationComment(FileMetadata destFile) {
+    private static String getDestinationComment(FileMetadata destFile) {
         return getFileMetadatComment(destFile, " Dest: ", ".");
     }
 
-    private String getFileMetadatComment(FileMetadata metadata, String prefix, String suffix) {
+    private static String getFileMetadatComment(FileMetadata metadata, String prefix, String suffix) {
         if (metadata == null || metadata.getComment().isEmpty()) {
             return "";
         }

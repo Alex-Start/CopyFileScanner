@@ -1,5 +1,6 @@
 package utils;
 
+import file.FileMetadata;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -11,10 +12,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 public class FileUtils {
     private static final Logger logger = LogManager.getLogger(FileUtils.class);
@@ -44,9 +50,10 @@ public class FileUtils {
         return Path.of(rootPath).relativize(Path.of(fullFilePath)).toString();
     }
 
-    public static void copySingleFile(Path sourceFile, Path destFile) throws IOException {
+    public static boolean copySingleFile(Path sourceFile, Path destFile) throws IOException {
         Files.createDirectories(destFile.getParent()); // Ensure destination folder exists
         Files.copy(sourceFile, destFile, StandardCopyOption.REPLACE_EXISTING);
+        return true;//TODO check it
     }
 
     public static void deleteFilesConcurrently(Collection<String> filePaths) {
@@ -82,7 +89,7 @@ public class FileUtils {
             }
 
             Path path = file.toPath();
-            // Step 1: Delete the file
+            // Step 1: set writable to file
             if (!file.canWrite()) {
                 file.setWritable(true);
             }
@@ -94,7 +101,7 @@ public class FileUtils {
                 } catch (UnsupportedOperationException ignored) {
                     // Skip if attribute doesn't exist
                 }
-            }
+            } //TODO for unix
 
             // 3. Delete the file
             Files.delete(path);
@@ -129,5 +136,72 @@ public class FileUtils {
     private static boolean isFolderEmpty(File folder) {
         File[] files = folder.listFiles();
         return files == null || files.length == 0;
+    }
+
+    public static List<FileMetadata> allFilesIntoList(File directory) {
+        List<FileMetadata> fileList = new ArrayList<>();
+        return allFilesIntoList(directory, fileList);
+    }
+
+    public static List<FileMetadata> allFilesIntoList(File directory, List<FileMetadata> fileList) {
+        listAllFilesInto(directory, fileList::add);
+        return fileList;
+    }
+
+    public static void listAllFilesInto(File directory, Consumer<FileMetadata> fileMetadataConsumer) {
+        //TODO check new File(null), new File(""), ...
+        if (!directory.isDirectory()) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(directory.toPath())) {
+            walk.filter(Files::isRegularFile)
+                    .map(Path::toFile)
+                    .forEach(x->{
+                        logger.debug(x.getAbsolutePath());
+                        FileMetadata fileMetadata = FileMetadata.getFileMetadata(directory.toPath(), x);
+                        fileMetadataConsumer.accept(fileMetadata);
+                    });
+        } catch (Exception e) {
+            // Log this error
+            logger.error("listAllFilesInto", e);
+        }
+    }
+
+    public static boolean checkDirPath(String[] paths) {
+        for (String path : paths) {
+            if (!checkDirPath(path)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean checkDirPath(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return false;
+        }
+        File file = new File(path);
+        return file.exists() && file.isDirectory();
+    }
+
+    //TODO alternative to FileUtils.listAllFilesInto - check what is faster
+    private void scanDirectory(File directory, Consumer<FileMetadata> fileMetadataConsumer) {
+        if (directory.isDirectory()) {
+            File[] files = directory.listFiles();
+            if (files == null) {
+                return;
+            }
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    scanDirectory(file, fileMetadataConsumer);
+                } else {
+                    logger.debug(file.getAbsolutePath());
+                    FileMetadata fileMetadata = FileMetadata.getFileMetadata(directory.toPath(), file);
+                    if (fileMetadata != null) {
+                        fileMetadataConsumer.accept(fileMetadata);
+                    }
+                }
+            }
+        }
     }
 }

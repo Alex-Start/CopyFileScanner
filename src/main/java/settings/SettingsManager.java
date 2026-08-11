@@ -37,7 +37,7 @@ public class SettingsManager {
         switch(action) {
             case SCAN -> res = getThreadCountScan(countCalcThreads);
             case COPY -> res = getThreadCountCopy(countCalcThreads);
-            case DELETE -> res = getThreadCountDelete(countCalcThreads);
+            case DELETE_DEST, DELETE_SOURCE -> res = getThreadCountDelete(countCalcThreads);
             default -> throw new IllegalArgumentException("Unknown Action enum: " + action);
         }
 

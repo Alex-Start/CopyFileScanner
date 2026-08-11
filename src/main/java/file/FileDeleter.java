@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import static ui.CopyFileScannerSwingUI.DELETED;
+
 public class FileDeleter implements IFileAction {
     private static final Logger logger = LogManager.getLogger(FileDeleter.class);
 
@@ -20,12 +22,17 @@ public class FileDeleter implements IFileAction {
     }
 
     @Override
-    public void doAction(String relativePath) throws IOException {
+    public String getProceededName() {
+        return DELETED;
+    }
+
+    @Override
+    public boolean doAction(String relativePath) throws IOException {
         Path sourceFile = Paths.get(relativePath);
         if(FileUtils.deleteFile(sourceFile.toString())) {
             logger.info("Deleted: {}", relativePath);
             FileUtils.deleteEmptyFolder(sourceFile.getParent().toString());
-            return;
+            return true;
         }
 
         throw new IOException("Error for deleting file: "+ relativePath);
