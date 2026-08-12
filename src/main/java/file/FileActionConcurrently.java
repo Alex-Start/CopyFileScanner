@@ -18,12 +18,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileActionConcurrently {
     private static final Logger logger = LogManager.getLogger(FileActionConcurrently.class);
+    private static final long THREAD_SHUTDOWN_TIMEOUT_MINUTES = 5;
 
     private final IFileAction fileAction;
     private final int countThreads;
     private final Map<Integer, String> selectedRows;
     private final IFileActionProgressCallback callback;
 
+    // Constructor for selected rows as collection
     public FileActionConcurrently(ActionHelper.Action actionType, String sourceDir, String destDir,
                                   Collection<String> selectedRows,
                                   ActionTabWrap.ActionTab tab,
@@ -35,6 +37,7 @@ public class FileActionConcurrently {
         this.countThreads = calculateThreadCount(actionType, destDir, this.selectedRows);
     }
 
+    // Constructor for selected rows from FileTableModel
     public FileActionConcurrently(ActionHelper.Action actionType, String sourceDir, String destDir,
                                   FileTableModel fileTableModel,
                                   ActionTabWrap.ActionTab tab,
@@ -51,6 +54,7 @@ public class FileActionConcurrently {
         this.countThreads = calculateThreadCount(actionType, destDir, this.selectedRows);
     }
 
+    // Extracted helper method to build indexed map from selected rows
     private Map<Integer, String> buildSelectedRowsMap(Collection<String> rows) {
         Map<Integer, String> map = new HashMap<>();
         AtomicInteger index = new AtomicInteger(-1);
@@ -118,7 +122,7 @@ public class FileActionConcurrently {
         isFinished = false;
         passedFiles = Collections.synchronizedList(new ArrayList<>());
         logger.info("Starting file '{}' with {} files...", fileAction.getActionName(), filesToDoAction.size());
-        executorService = Executors.newFixedThreadPool(countThreads);
+        executorService = Executors.newFixedThreadPool(countThreads); // Adjust thread count as needed
         AtomicBoolean overallSuccess = new AtomicBoolean(true);
 
         for (String relativePath : filesToDoAction) {
@@ -145,6 +149,8 @@ public class FileActionConcurrently {
             }
             return status;
         } catch (IOException e) {
+            // error logged in doAction(...)
+            // TODO add error message for callback and show it on Completed Action
             logger.error("Error doing action on file {}: {}", relativePath, e.getMessage());
             return false;
         } finally {
@@ -154,10 +160,10 @@ public class FileActionConcurrently {
                 Optional<Map.Entry<Integer, String>> entry = selectedRows.entrySet().stream()
                         .filter(x -> x.getValue().equals(relativePath))
                         .findFirst();
-                entry.ifPresent(e -> callback.onFileProcessed(e.getKey(), fileAction.getProceededName(), tab));
+                entry.ifPresent(e -> callback.onFileProcessed(e.getKey(), fileAction.getProceededName(), tab)); // Update specific row
             }
             if (callback != null) {
-                callback.onActionProgress(percentage, tab);
+                callback.onActionProgress(percentage, tab); // Update overall progress
             }
         }
     }
@@ -172,9 +178,9 @@ public class FileActionConcurrently {
 
     private void shutdownAndAwaitTermination() {
         executorService.shutdown();
-        new Thread(() -> {
+        new Thread(() -> { // Use a separate thread to wait for termination
             try {
-                if (!executorService.awaitTermination(5, TimeUnit.MINUTES)) {
+                if (!executorService.awaitTermination(THREAD_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
                     executorService.shutdownNow();
                 }
                 if (callback != null) {

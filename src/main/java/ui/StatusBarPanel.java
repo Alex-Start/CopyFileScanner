@@ -15,9 +15,10 @@ public class StatusBarPanel implements IStatusBarUpdater {
     private final JLabel messageLabel;
     private long startTime = System.currentTimeMillis();
 
+    // List(select, total, duration, progress bar)
     private final Map<ActionTabWrap.ActionTab, List<Long>> statusBarData = new HashMap<>();
     private final ActionTabWrap actionTabWrap;
-    private ActionTabWrap.ActionTab setForActionTab;
+    private ActionTabWrap.ActionTab setForActionTab; // null - set for current active tab
 
     public StatusBarPanel(ActionTabWrap actionTabWrap) {
         this.actionTabWrap = actionTabWrap;
@@ -38,7 +39,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
     public JLabel getMessageLabel() { return messageLabel; }
 
     public void cleanupStartTime() {
-        startStartTime();
+        startStartTime(); // Record start time
         updateDuration(0);
     }
 
@@ -92,6 +93,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
 
     public void updateTotalLabel(int value) {
         if (value < 0) {
+            // TODO index as const/enum/etc.
             value = (int) (getStatusBarValue(1) + value);
         }
         if (value < 0) {
@@ -101,6 +103,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
     }
 
     public void refreshStatusBar() {
+        // TODO index as const/enum/etc.
         refreshStatusBar(0);
         refreshStatusBar(1);
         refreshStatusBar(2);
@@ -131,6 +134,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
                     progressBar.repaint();
                 }
             }
+            // TODO add messageLabel
         });
     }
 

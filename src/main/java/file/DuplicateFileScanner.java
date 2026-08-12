@@ -36,17 +36,21 @@ public class DuplicateFileScanner implements IFileScanner {
             callback.onScanStarted("Scanning for duplicates...", tab);
         }
 
+        // Map<String, List<FileMetadata>> filesByName = ThreadManager.oneThreadPerDevice(paths, this);
         Map<String, List<FileMetadata>> filesByName = new ThreadManager(paths, false, new SettingsManager(ActionHelper.Action.SCAN)).createDynamicThreads(this);
         int totalFiles = filesByName.size();
         int duplicateCount = 0;
 
+        // Step 2: Compare files with the same name using content hash
         Map<String, List<String>> duplicates = new HashMap<>();
         for (Map.Entry<String, List<FileMetadata>> entry : filesByName.entrySet()) {
             List<FileMetadata> fileMetadata = entry.getValue();
             List<String> filePaths = fileMetadata.stream().map(x -> x.getAbsolutePath().toString()).collect(Collectors.toList());
             if (filePaths.size() > 1) {
                 logger.debug("Matched: {}", filePaths);
+                // get the first to get file name
                 String key = Path.of(filePaths.get(0)).getFileName().toString();
+                // show the same file names with grouping 'filename [n]'
                 String suffix = "";
                 if (duplicates.containsKey(key)) {
                     int i = 1;
@@ -103,7 +107,7 @@ public class DuplicateFileScanner implements IFileScanner {
     }
 
     public static void main(String[] args) {
-        String directory = "C:/Your/Folder/Path";
+        String directory = "C:\\Your\\Folder\\Path";
         IScanProgressCallback callback = new IScanProgressCallback() {
             @Override
             public void onScanStarted(String message, ActionTabWrap.ActionTab tab) {}
