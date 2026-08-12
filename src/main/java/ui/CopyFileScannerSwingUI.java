@@ -73,6 +73,7 @@ public class CopyFileScannerSwingUI extends JFrame {
         add(bottomPanel, BorderLayout.SOUTH);
 
         setVisible(true);
+        buttonsManager.updateButtonsForTab(ActionTabWrap.ActionTab.COPY, false);
 
         registerListeners();
     }
