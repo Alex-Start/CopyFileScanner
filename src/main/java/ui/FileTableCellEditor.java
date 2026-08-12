@@ -211,13 +211,9 @@ public class FileTableCellEditor implements ITableUpdater {
         }
 
         if (actionTabWrap.isEqual(ActionTabWrap.ActionTab.COPY)) {
-            getButtonsManager().getCopyButton().setEnabled(anyChecked);
             selectAllCheckbox.setSelected(allChecked);
-        } else {
-            getButtonsManager().getCopyButton().setEnabled(false);
         }
-        getButtonsManager().getDeleteSourceButton().setEnabled(anyChecked);
-        getButtonsManager().getDeleteDestButton().setEnabled(anyChecked);
+        getButtonsManager().updateButtonsForTab(actionTabWrap.getActionName(), anyChecked);
         statusBarPanel.updateSelectedFiles(count);
     }
 }

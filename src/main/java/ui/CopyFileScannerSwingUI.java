@@ -26,6 +26,7 @@ public class CopyFileScannerSwingUI extends JFrame {
     static final String COPY_SELECTED = "Copy Selected";
     static final String DELETE_SOURCE = "Delete Source";
     static final String DELETE_DESTINATION = "Delete Destination";
+    public static final String DELETE_SELECTED = "Delete Selected";
 
     private static final ActionTabWrap ACTION_TAB = new ActionTabWrap(tabbedPane);
     private static final StatusBarPanel statusBarPanel = new StatusBarPanel(ACTION_TAB);
