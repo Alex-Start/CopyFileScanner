@@ -1,7 +1,6 @@
 package ui;
 
 import common.ActionTabWrap;
-
 import javax.swing.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -15,45 +14,31 @@ public class StatusBarPanel implements IStatusBarUpdater {
     private final JLabel durationLabel;
     private final JLabel messageLabel;
     private long startTime = System.currentTimeMillis();
-    // List(select, total, duration, progress bar)
+
     private final Map<ActionTabWrap.ActionTab, List<Long>> statusBarData = new HashMap<>();
     private final ActionTabWrap actionTabWrap;
-    private ActionTabWrap.ActionTab setForActionTab;//null - set for current active tab
+    private ActionTabWrap.ActionTab setForActionTab;
 
     public StatusBarPanel(ActionTabWrap actionTabWrap) {
         this.actionTabWrap = actionTabWrap;
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        statusBarData.put(ActionTabWrap.ActionTab.COPY, Arrays.asList(0L,0L,0L,0L));
-        statusBarData.put(ActionTabWrap.ActionTab.DUPLICATE, Arrays.asList(0L,0L,0L,0L));
+        statusBarData.put(ActionTabWrap.ActionTab.COPY, Arrays.asList(0L, 0L, 0L, 0L));
+        statusBarData.put(ActionTabWrap.ActionTab.DUPLICATE, Arrays.asList(0L, 0L, 0L, 0L));
         totalRowsLabel = new JLabel("Total: 0");
         selectedFilesLabel = new JLabel("Selected: 0");
         durationLabel = new JLabel("Duration: 0s");
         messageLabel = new JLabel("");
     }
 
-    public JProgressBar getProgressBar() {
-        return progressBar;
-    }
-
-    public JLabel getSelectedFilesLabel() {
-        return selectedFilesLabel;
-    }
-
-    public JLabel getTotalRowsLabel() {
-        return totalRowsLabel;
-    }
-
-    public JLabel getDurationLabel() {
-        return durationLabel;
-    }
-
-    public JLabel getMessageLabel() {
-        return messageLabel;
-    }
+    public JProgressBar getProgressBar() { return progressBar; }
+    public JLabel getSelectedFilesLabel() { return selectedFilesLabel; }
+    public JLabel getTotalRowsLabel() { return totalRowsLabel; }
+    public JLabel getDurationLabel() { return durationLabel; }
+    public JLabel getMessageLabel() { return messageLabel; }
 
     public void cleanupStartTime() {
-        startStartTime(); // Record start time
+        startStartTime();
         updateDuration(0);
     }
 
@@ -96,7 +81,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
 
     @Override
     public void updateMessage(String message) {
-        messageLabel.setText(message);
+        SwingUtilities.invokeLater(() -> messageLabel.setText(message));
     }
 
     @Override
@@ -107,8 +92,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
 
     public void updateTotalLabel(int value) {
         if (value < 0) {
-            // TODO index as const/enum/etc.
-            value = (int) (getStatusBarValue(1)+value);
+            value = (int) (getStatusBarValue(1) + value);
         }
         if (value < 0) {
             value = 0;
@@ -117,7 +101,6 @@ public class StatusBarPanel implements IStatusBarUpdater {
     }
 
     public void refreshStatusBar() {
-        // TODO index as const/enum/etc.
         refreshStatusBar(0);
         refreshStatusBar(1);
         refreshStatusBar(2);
@@ -147,7 +130,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
                     progressBar.setValue((int) value);
                     progressBar.repaint();
                 }
-            }//TODO add messageLabel
+            }
         });
     }
 
@@ -172,7 +155,7 @@ public class StatusBarPanel implements IStatusBarUpdater {
 
     private long getStatusBarValue(int index) {
         List<Long> list = statusBarData.get(actionTabWrap.getActionName());
-        return list.get(index);
+        return list != null ? list.get(index) : 0L;
     }
 
     private void setStatusBarData(int index, long value) {
@@ -184,24 +167,27 @@ public class StatusBarPanel implements IStatusBarUpdater {
             actionTab = ActionTabWrap.ActionTab.DUPLICATE;
         }
         List<Long> list = statusBarData.get(actionTab);
-        list.set(index, value);
+        if (list != null) {
+            list.set(index, value);
+        }
     }
 
     public void upDownProgressBar(AtomicBoolean isFinished) {
         int i = 0;
         boolean plus = true;
         while (!isFinished.get()) {
-            progressBar.setValue(i);
+            final int val = i;
+            SwingUtilities.invokeLater(() -> progressBar.setValue(val));
             if (plus) {
                 i++;
             } else {
                 i--;
             }
             if (i >= 100 || i <= 0) {
-                plus = ! plus;
+                plus = !plus;
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(100);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 return;

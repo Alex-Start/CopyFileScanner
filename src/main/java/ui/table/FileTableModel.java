@@ -212,9 +212,14 @@ public class FileTableModel extends DefaultTableModel {
     }
 
     public static boolean isSkipCheckBoxCondition(TableModel table, int row) {
-        // Check if comment indicates it's already processed (copied/deleted)
-        String comment = (String) table.getValueAt(row, FileTableColumn.COMMENT.getColumnIndex());
-        return (comment != null && (comment.equals(COPIED) || comment.endsWith(DELETED)));
+        if (table == null || row < 0 || row >= table.getRowCount()) {
+            return false;
+        }
+        Object commentObj = table.getValueAt(row, FileTableColumn.COMMENT.getColumnIndex());
+        if (commentObj instanceof String comment) {
+            return comment.equals(COPIED) || comment.endsWith(DELETED);
+        }
+        return false;
     }
 
     public boolean isSkipCheckBoxCondition(int row) {

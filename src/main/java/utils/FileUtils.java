@@ -51,9 +51,11 @@ public class FileUtils {
     }
 
     public static boolean copySingleFile(Path sourceFile, Path destFile) throws IOException {
-        Files.createDirectories(destFile.getParent()); // Ensure destination folder exists
-        Files.copy(sourceFile, destFile, StandardCopyOption.REPLACE_EXISTING);
-        return true;//TODO check it
+        if (destFile.getParent() != null) {
+            Files.createDirectories(destFile.getParent());
+        }
+        Files.copy(sourceFile, destFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+        return true;
     }
 
     public static void deleteFilesConcurrently(Collection<String> filePaths) {

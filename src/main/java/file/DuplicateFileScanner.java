@@ -32,24 +32,21 @@ public class DuplicateFileScanner implements IFileScanner {
         this.tab = tab;
         String[] paths = directoryPath.split(DELIM);
         AtomicInteger filesScanned = new AtomicInteger(0);
+        if (callback != null) {
+            callback.onScanStarted("Scanning for duplicates...", tab);
+        }
 
-        callback.onScanStarted("Scanning for duplicates...", tab);
-        //Map<String, List<FileMetadata>> filesByName = ThreadManager.oneThreadPerDevice(paths, this);
         Map<String, List<FileMetadata>> filesByName = new ThreadManager(paths, false, new SettingsManager(ActionHelper.Action.SCAN)).createDynamicThreads(this);
-
         int totalFiles = filesByName.size();
         int duplicateCount = 0;
 
-        // Step 2: Compare files with the same name using content hash
         Map<String, List<String>> duplicates = new HashMap<>();
         for (Map.Entry<String, List<FileMetadata>> entry : filesByName.entrySet()) {
             List<FileMetadata> fileMetadata = entry.getValue();
-            List<String> filePaths = fileMetadata.stream().map(x->x.getAbsolutePath().toString()).collect(Collectors.toList());
+            List<String> filePaths = fileMetadata.stream().map(x -> x.getAbsolutePath().toString()).collect(Collectors.toList());
             if (filePaths.size() > 1) {
                 logger.debug("Matched: {}", filePaths);
-                // get the first to get file name
                 String key = Path.of(filePaths.get(0)).getFileName().toString();
-                // show the same file names with grouping 'filename [n]'
                 String suffix = "";
                 if (duplicates.containsKey(key)) {
                     int i = 1;
@@ -62,69 +59,64 @@ public class DuplicateFileScanner implements IFileScanner {
                 duplicateCount += entry.getValue().size();
             }
             int scanned = filesScanned.incrementAndGet();
-            callback.onScanProgress((int) ((double) scanned / totalFiles * 100), tab);
+            if (callback != null && totalFiles > 0) {
+                callback.onScanProgress((int) ((double) scanned / totalFiles * 100), tab);
+            }
         }
-
-        callback.onScanCompletedDuplicates(duplicates, tab, "Duplicate scan completed: " + duplicateCount + " duplicate files found in " + duplicates.size() + " groups.");
+        if (callback != null) {
+            callback.onScanCompletedDuplicates(duplicates, tab, "Duplicate scan completed: " + duplicateCount + " duplicate files found in " + duplicates.size() + " groups.");
+        }
         logger.info("Scan duplicates is finished.");
-
         return duplicates;
     }
 
     public void scanFiles(String folderPath, Map<String, List<FileMetadata>> filesByName) {
-        AtomicInteger filesScanned = new AtomicInteger(0);
-        AtomicInteger totalFiles = new AtomicInteger(100);
-        FileUtils.listAllFilesInto(new File(folderPath), metadata -> {
-            String hash = metadata.getChecksum();
-            filesByName.computeIfAbsent(hash, k -> new ArrayList<>()).add(metadata);
-
-            updateScanProgress(callback, filesScanned, totalFiles, tab);
-        });
+        if (folderPath == null || folderPath.isEmpty()) return;
+        scanFiles(new File(folderPath), filesByName);
     }
-    public void scanFiles(File folderPath, Map<String, List<FileMetadata>> filesByName) {
-        AtomicInteger filesScanned = new AtomicInteger(0);
-        AtomicInteger totalFiles = new AtomicInteger(100);
-        FileUtils.listAllFilesInto(folderPath, metadata -> {
-            String hash = metadata.getChecksum();
-            filesByName.computeIfAbsent(hash, k -> new ArrayList<>()).add(metadata);
 
-            updateScanProgress(callback, filesScanned, totalFiles, tab);
+    public void scanFiles(File folderPath, Map<String, List<FileMetadata>> filesByName) {
+        if (folderPath == null || !folderPath.exists()) return;
+
+        Map<Long, List<FileMetadata>> filesBySize = new HashMap<>();
+        FileUtils.listAllFilesInto(folderPath, metadata -> {
+            if (metadata != null) {
+                synchronized (filesBySize) {
+                    filesBySize.computeIfAbsent(metadata.getSize(), k -> new ArrayList<>()).add(metadata);
+                }
+            }
         });
+
+        for (Map.Entry<Long, List<FileMetadata>> entry : filesBySize.entrySet()) {
+            List<FileMetadata> candidateList = entry.getValue();
+            if (candidateList.size() > 1) {
+                for (FileMetadata metadata : candidateList) {
+                    String hash = metadata.getChecksum();
+                    if (hash != null && !hash.isEmpty()) {
+                        synchronized (filesByName) {
+                            filesByName.computeIfAbsent(hash, k -> new ArrayList<>()).add(metadata);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     public static void main(String[] args) {
-        String directory = "C:\\Your\\Folder\\Path";
-
+        String directory = "C:/Your/Folder/Path";
         IScanProgressCallback callback = new IScanProgressCallback() {
             @Override
-            public void onScanStarted(String message, ActionTabWrap.ActionTab tab) {
-
-            }
-
+            public void onScanStarted(String message, ActionTabWrap.ActionTab tab) {}
             @Override
-            public void onScanProgress(int percentage, ActionTabWrap.ActionTab tab) {
-
-            }
-
+            public void onScanProgress(int percentage, ActionTabWrap.ActionTab tab) {}
             @Override
-            public void onScanCompletedCopy(Map<String, String> differences, ActionTabWrap.ActionTab tab, String message) {
-
-            }
-
+            public void onScanCompletedCopy(Map<String, String> differences, ActionTabWrap.ActionTab tab, String message) {}
             @Override
-            public void onScanCompletedDuplicates(Map<String, List<String>> duplicates, ActionTabWrap.ActionTab tab, String message) {
-
-            }
-
+            public void onScanCompletedDuplicates(Map<String, List<String>> duplicates, ActionTabWrap.ActionTab tab, String message) {}
             @Override
-            public void onScanError(String errorMessage, ActionTabWrap.ActionTab tab) {
-
-            }
-        }
-        ;
-
+            public void onScanError(String errorMessage, ActionTabWrap.ActionTab tab) {}
+        };
         Map<String, List<String>> duplicates = new DuplicateFileScanner(callback).findDuplicateFiles(directory, ActionTabWrap.ActionTab.DUPLICATE);
-
         if (duplicates.isEmpty()) {
             System.out.println("No duplicate files found.");
         } else {

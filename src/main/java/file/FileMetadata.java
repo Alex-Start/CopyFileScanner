@@ -14,14 +14,14 @@ public class FileMetadata {
     public static final String ERROR_FILE_ATTRIBUTES = "Error file attributes";
     private static final Logger logger = LogManager.getLogger(FileMetadata.class);
 
-    private final String rootPath;      // Store the root folder path
-    private final String relativePath;  // Store the relative path
+    private final String rootPath;
+    private final String relativePath;
     private final String absolutePath;
     private final long size;
     private final long lastModified;
     private String comment;
-    private byte[] content;  // Lazily loaded content
-    private String checksum;  // New field for SHA-256 hash
+    private byte[] content;
+    private String checksum;
 
     public FileMetadata(String rootPath, String filePath, long size, long lastModified) {
         this(rootPath, filePath, size, lastModified, "");
@@ -56,7 +56,6 @@ public class FileMetadata {
                 logger.error("Not exists file {}", file.getAbsolutePath());
                 return null;
             }
-
             return new FileMetadata(
                     rootPath.toString(),
                     filePath.toString(),
@@ -96,10 +95,16 @@ public class FileMetadata {
 
     public byte[] getContent() {
         if (content == null) {
+            Path filePath = Path.of(rootPath, relativePath);
             try {
-                content = Files.readAllBytes(Path.of(rootPath, relativePath));
+                if (Files.exists(filePath) && Files.size(filePath) > 50 * 1024 * 1024) {
+                    logger.warn("File exceeds 50MB threshold, skipping full content byte array load: {}", filePath);
+                    content = new byte[0];
+                } else {
+                    content = Files.readAllBytes(filePath);
+                }
             } catch (IOException e) {
-                logger.error("Error reading file content: {}{}{}", rootPath, File.separator, relativePath);
+                logger.error("Error reading file content: {}", filePath, e);
                 content = new byte[0];
             }
         }
@@ -115,12 +120,11 @@ public class FileMetadata {
 
     private String computeChecksum() {
         Path path = Path.of(rootPath, relativePath);
-
         try {
             return FileUtils.calculateFileHash(path.toString());
-        } catch (IOException /*| NoSuchAlgorithmException */e) {
+        } catch (IOException e) {
             logger.error("Error computing checksum for: {}", path.toString());
-            comment = (comment + " Error computing checksum for: {}" + path).trim();
+            comment = (comment + " Error computing checksum for: " + path).trim();
             return "";
         }
     }
@@ -128,7 +132,7 @@ public class FileMetadata {
     @Override
     public String toString() {
         return "file.FileMetadata{" +
-                "relativePath='" + relativePath + '\'' +
+                "relativePath='" + relativePath + "'" +
                 ", size=" + size +
                 ", lastModified=" + lastModified +
                 '}';
