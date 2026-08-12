@@ -8,6 +8,7 @@ import static ui.CopyFileScannerSwingUI.*;
 
 public class ButtonsManager {
     private final JButton copyButton, deleteSourceButton, deleteDestButton;
+    private ActionTabWrap.ActionTab currentTab = ActionTabWrap.ActionTab.COPY;
 
     public ButtonsManager() {
         // 2 actions for 1 button depends on active tab
@@ -17,6 +18,7 @@ public class ButtonsManager {
         deleteSourceButton.setEnabled(false);
         deleteDestButton = new JButton(DELETE_DESTINATION);
         deleteDestButton.setEnabled(false);
+        updateButtonsForTab(ActionTabWrap.ActionTab.COPY, false);
     }
 
     public void addActionListener(FileOperationController fileOperationController) {
@@ -38,12 +40,14 @@ public class ButtonsManager {
     }
 
     public void updateButtonsForTab(ActionTabWrap.ActionTab tab, boolean anyChecked) {
+        this.currentTab = tab;
         if (ActionTabWrap.ActionTab.COPY.equals(tab)) {
             copyButton.setVisible(true);
             copyButton.setEnabled(anyChecked);
             deleteSourceButton.setText(DELETE_SOURCE);
             deleteSourceButton.setVisible(true);
             deleteSourceButton.setEnabled(anyChecked);
+            deleteDestButton.setText(DELETE_DESTINATION);
             deleteDestButton.setVisible(true);
             deleteDestButton.setEnabled(anyChecked);
         } else {
@@ -58,17 +62,21 @@ public class ButtonsManager {
     }
 
     public void setEnabled(boolean isSelected) {
-        copyButton.setEnabled(isSelected);
-        deleteSourceButton.setEnabled(isSelected);
-        deleteDestButton.setEnabled(isSelected);
+        if (ActionTabWrap.ActionTab.COPY.equals(currentTab)) {
+            copyButton.setEnabled(isSelected);
+            deleteSourceButton.setEnabled(isSelected);
+            deleteDestButton.setEnabled(isSelected);
+        } else {
+            copyButton.setEnabled(false);
+            deleteSourceButton.setEnabled(isSelected);
+            deleteDestButton.setEnabled(false);
+        }
     }
 
     public void disablePanelAndButtons() {
-        copyButton.setEnabled(false);
+        updateButtonsForTab(currentTab, false);
         copyButton.repaint();
-        deleteSourceButton.setEnabled(false);
         deleteSourceButton.repaint();
-        deleteDestButton.setEnabled(false);
         deleteDestButton.repaint();
     }
 }
