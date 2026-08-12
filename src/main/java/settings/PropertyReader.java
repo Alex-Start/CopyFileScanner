@@ -10,6 +10,17 @@ import java.util.Properties;
 public class PropertyReader {
     private static final Logger logger = LogManager.getLogger(PropertyReader.class);
     private static final String CONFIG_PROPERTIES = "/config.properties";
+    private static final Properties PROPERTIES = new Properties();
+
+    static {
+        try (InputStream input = PropertyReader.class.getResourceAsStream(CONFIG_PROPERTIES)) {
+            if (input != null) {
+                PROPERTIES.load(input);
+            }
+        } catch (IOException e) {
+            logger.error("Error reading property file: {}", e.getMessage());
+        }
+    }
 
     public static int getPropertyAsInteger(String field, int defaultValue) {
         try {
@@ -24,14 +35,6 @@ public class PropertyReader {
     }
 
     public static String getPropertyAsString(String field, String defaultValue) {
-        Properties properties = new Properties();
-        try (InputStream input = PropertyReader.class.getResourceAsStream(CONFIG_PROPERTIES)) {
-            properties.load(input);
-            return properties.getProperty(field, defaultValue);
-        } catch (IOException e) {
-            logger.error("Error reading property file: {}", e.getMessage());
-            return defaultValue; // Default value in case of error
-        }
+        return PROPERTIES.getProperty(field, defaultValue);
     }
-
 }

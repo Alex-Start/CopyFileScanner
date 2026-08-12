@@ -12,6 +12,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 
 public class FileMetadata {
     public static final String ERROR_FILE_ATTRIBUTES = "Error file attributes";
+    public static final long MAX_CONTENT_BYTE_SIZE = 50 * 1024 * 1024L; // 50 MB threshold for lazy byte loading
+
     private static final Logger logger = LogManager.getLogger(FileMetadata.class);
 
     private final String rootPath;      // Store the root folder path
@@ -56,7 +58,6 @@ public class FileMetadata {
                 logger.error("Not exists file {}", file.getAbsolutePath());
                 return null;
             }
-
             return new FileMetadata(
                     rootPath.toString(),
                     filePath.toString(),
@@ -96,10 +97,16 @@ public class FileMetadata {
 
     public byte[] getContent() {
         if (content == null) {
+            Path filePath = Path.of(rootPath, relativePath);
             try {
-                content = Files.readAllBytes(Path.of(rootPath, relativePath));
+                if (Files.exists(filePath) && Files.size(filePath) > MAX_CONTENT_BYTE_SIZE) {
+                    logger.warn("File exceeds max size threshold ({} bytes), skipping full content byte array load: {}", MAX_CONTENT_BYTE_SIZE, filePath);
+                    content = new byte[0];
+                } else {
+                    content = Files.readAllBytes(filePath);
+                }
             } catch (IOException e) {
-                logger.error("Error reading file content: {}{}{}", rootPath, File.separator, relativePath);
+                logger.error("Error reading file content: {}{}{}", rootPath, File.separator, relativePath, e);
                 content = new byte[0];
             }
         }
@@ -115,7 +122,6 @@ public class FileMetadata {
 
     private String computeChecksum() {
         Path path = Path.of(rootPath, relativePath);
-
         try {
             return FileUtils.calculateFileHash(path.toString());
         } catch (IOException /*| NoSuchAlgorithmException */e) {
@@ -128,7 +134,7 @@ public class FileMetadata {
     @Override
     public String toString() {
         return "file.FileMetadata{" +
-                "relativePath='" + relativePath + '\'' +
+                "relativePath='" + relativePath + "'" +
                 ", size=" + size +
                 ", lastModified=" + lastModified +
                 '}';

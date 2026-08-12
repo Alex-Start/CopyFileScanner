@@ -77,6 +77,7 @@ public class ThreadManager {
     }
 
     public static List<List<String>> splitFolders(List<String> folders, int parts) {
+        if (parts <= 0) parts = 1;
         List<List<String>> result = new ArrayList<>();
         for (int i = 0; i < parts; i++) result.add(new ArrayList<>());
         for (int i = 0; i < folders.size(); i++) {

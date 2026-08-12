@@ -1,7 +1,7 @@
 package file;
 
-import common.ActionTabWrap;
 import common.ActionHelper;
+import common.ActionTabWrap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import service.IFileActionProgressCallback;
@@ -18,72 +18,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileActionConcurrently {
     private static final Logger logger = LogManager.getLogger(FileActionConcurrently.class);
+    private static final long THREAD_SHUTDOWN_TIMEOUT_MINUTES = 5;
 
-    private static final int MAX_THREADS = 2; // Or use Runtime.getRuntime().availableProcessors()
+    private final IFileAction fileAction;
+    private final int countThreads;
+    private final Map<Integer, String> selectedRows;
     private final IFileActionProgressCallback callback;
-    private int countThreads;
-    private IFileAction fileAction;
-    private Map<Integer, String> selectedRows;
-
-    /*public FileActionConcurrently(ActionHelper.Action actionType, String sourceDir, String destDir, Collection<String> selectedRows, ActionTabWrap.ActionTab tab, IFileActionProgressCallback callback) {
-        this.tab = tab;
-        this.callback = callback;
-        this.selectedRows = new HashMap<>();
-        AtomicInteger atomicInteger = new AtomicInteger(-1);
-        selectedRows.forEach(x-> this.selectedRows.put(atomicInteger.incrementAndGet(), x));
-
-        switch (actionType) {
-
-            case COPY -> {
-                countThreads = SettingsManager.getThreadCountCopy(destDir);
-                fileAction = new FileCopier(sourceDir, destDir);
-
-            }
-            case DELETE_SOURCE -> {
-                countThreads = SettingsManager.getThreadCountDelete(selectedRows.toArray(new String[0]));
-                fileAction = new FileDeleter();
-
-            }
-            case DELETE_DEST -> {
-                countThreads = SettingsManager.getThreadCountDelete(selectedRows.toArray(new String[0]));
-                fileAction = new FileDeleter();
-
-            }
-            default -> {
-                throw new IllegalArgumentException("Unsupported action: "+ actionType);
-            }
-        }
-    }
-
-    public FileActionConcurrently(ActionHelper.Action actionType, String sourceDir, String destDir, FileTableModel fileTableModel, ActionTabWrap.ActionTab tab, IFileActionProgressCallback callback) {
-        this.tab = tab;
-        this.callback = callback;
-
-        switch (actionType) {
-
-            case COPY -> {
-                selectedRows = fileTableModel.getSelectedRows();
-                countThreads = SettingsManager.getThreadCountCopy(destDir);
-                fileAction = new FileCopier(sourceDir, destDir);
-
-            }
-            case DELETE_SOURCE -> {
-                selectedRows = fileTableModel.getSelectedRows(sourceDir);
-                countThreads = SettingsManager.getThreadCountDelete(selectedRows.values().toArray(new String[0]));
-                fileAction = new FileDeleter();
-
-            }
-            case DELETE_DEST -> {
-                selectedRows = fileTableModel.getSelectedRows(destDir);
-                countThreads = SettingsManager.getThreadCountDelete(selectedRows.values().toArray(new String[0]));
-                fileAction = new FileDeleter();
-
-            }
-            default -> {
-                throw new IllegalArgumentException("Unsupported action: "+ actionType);
-            }
-        }
-    }*/
 
     // Constructor for selected rows as collection
     public FileActionConcurrently(ActionHelper.Action actionType, String sourceDir, String destDir,
@@ -93,7 +33,8 @@ public class FileActionConcurrently {
         this.tab = tab;
         this.callback = callback;
         this.selectedRows = buildSelectedRowsMap(selectedRows);
-        initAction(actionType, sourceDir, destDir, this.selectedRows);
+        this.fileAction = createAction(actionType, sourceDir, destDir);
+        this.countThreads = calculateThreadCount(actionType, destDir, this.selectedRows);
     }
 
     // Constructor for selected rows from FileTableModel
@@ -109,7 +50,8 @@ public class FileActionConcurrently {
             case DELETE_DEST -> fileTableModel.getSelectedRows(destDir);
             default -> throw new IllegalArgumentException("Unsupported action: " + actionType);
         };
-        initAction(actionType, sourceDir, destDir, this.selectedRows);
+        this.fileAction = createAction(actionType, sourceDir, destDir);
+        this.countThreads = calculateThreadCount(actionType, destDir, this.selectedRows);
     }
 
     // Extracted helper method to build indexed map from selected rows
@@ -120,42 +62,44 @@ public class FileActionConcurrently {
         return map;
     }
 
-    // Central method for initializing threads and action based on type
-    private void initAction(ActionHelper.Action actionType, String sourceDir, String destDir, Map<Integer, String> rows) {
-        switch (actionType) {
-            case COPY -> {
-                this.countThreads = SettingsManager.getThreadCountCopy(destDir);
-                this.fileAction = new FileCopier(sourceDir, destDir);
-            }
+    private IFileAction createAction(ActionHelper.Action actionType, String sourceDir, String destDir) {
+        return switch (actionType) {
+            case COPY -> new FileCopier(sourceDir, destDir);
+            case DELETE_SOURCE, DELETE_DEST -> new FileDeleter();
+            default -> throw new IllegalArgumentException("Unsupported action: " + actionType);
+        };
+    }
+
+    private int calculateThreadCount(ActionHelper.Action actionType, String destDir, Map<Integer, String> rows) {
+        return switch (actionType) {
+            case COPY -> SettingsManager.getThreadCountCopy(destDir);
             case DELETE_SOURCE, DELETE_DEST -> {
                 String[] paths = rows.values().toArray(new String[0]);
-                this.countThreads = SettingsManager.getThreadCountDelete(paths);
-                this.fileAction = new FileDeleter();
+                yield SettingsManager.getThreadCountDelete(paths);
             }
             default -> throw new IllegalArgumentException("Unsupported action: " + actionType);
-        }
+        };
     }
 
     private ExecutorService executorService;
     private final AtomicInteger proceededFiles = new AtomicInteger(0);
-    private List<String> passedFiles = new ArrayList<>();
-    private final Object lock = new Object();
+    private List<String> passedFiles = Collections.synchronizedList(new ArrayList<>());
     private volatile boolean isFinished = false;
     private int totalFiles;
     private final ActionTabWrap.ActionTab tab;
 
     public void performFileAction() {
-
         if (selectedRows.isEmpty()) {
-            callback.onActionCompleted("No files selected for action.", null, tab);
+            if (callback != null) {
+                callback.onActionCompleted("No files selected for action.", null, tab);
+            }
             return;
         }
-
-        callback.onActionStarted("Starting file action...", tab);
-
+        if (callback != null) {
+            callback.onActionStarted("Starting file action...", tab);
+        }
         totalFiles = selectedRows.size();
-
-        boolean result = doActionFiles(selectedRows);
+        doActionFiles(selectedRows);
     }
 
     public boolean doActionFiles() {
@@ -170,58 +114,57 @@ public class FileActionConcurrently {
         if (filesToDoAction.isEmpty()) {
             logger.info("No files selected for '{}'.", fileAction.getActionName());
             isFinished = true;
-            callback.onActionError("No files selected for "+ fileAction.getActionName(), tab);
+            if (callback != null) {
+                callback.onActionError("No files selected for " + fileAction.getActionName(), tab);
+            }
             return false;
         }
-
         isFinished = false;
-        passedFiles = new ArrayList<>();
+        passedFiles = Collections.synchronizedList(new ArrayList<>());
         logger.info("Starting file '{}' with {} files...", fileAction.getActionName(), filesToDoAction.size());
-
         executorService = Executors.newFixedThreadPool(countThreads); // Adjust thread count as needed
+        AtomicBoolean overallSuccess = new AtomicBoolean(true);
 
-        AtomicBoolean result = new AtomicBoolean(true);
         for (String relativePath : filesToDoAction) {
-            executorService.submit(() -> result.set(result.get() & doActionFile(relativePath)));
-        }
-
-        executorService.submit(() -> {
-            while(filesToDoAction.size() > getCountProceededFiles()) {
-                try {
-                    Thread.sleep(1000); // Prevent CPU overuse
-                } catch (InterruptedException ignored) {
+            executorService.submit(() -> {
+                boolean success = doActionFile(relativePath);
+                if (!success) {
+                    overallSuccess.set(false);
                 }
-            }
-        });
+            });
+        }
 
         shutdownAndAwaitTermination();
         logger.info("'{}' process completed!", fileAction.getActionName());
         isFinished = true;
-        return result.get();
+        return overallSuccess.get();
     }
 
     private boolean doActionFile(String relativePath) {
         boolean status = false;
         try {
             status = fileAction.doAction(relativePath);
-            synchronized (lock) {
+            if (status) {
                 passedFiles.add(relativePath);
             }
             return status;
         } catch (IOException e) {
             // error logged in doAction(...)
             // TODO add error message for callback and show it on Completed Action
-            return status;
+            logger.error("Error doing action on file {}: {}", relativePath, e.getMessage());
+            return false;
         } finally {
             int currentProcessed = proceededFiles.incrementAndGet();
-            int percentage = (int) ((double) currentProcessed / totalFiles * 100);
-            if (status) {
-                int rowIndex = selectedRows.entrySet().stream()
+            int percentage = totalFiles > 0 ? (int) ((double) currentProcessed / totalFiles * 100) : 100;
+            if (status && callback != null) {
+                Optional<Map.Entry<Integer, String>> entry = selectedRows.entrySet().stream()
                         .filter(x -> x.getValue().equals(relativePath))
-                        .findFirst().get().getKey();
-                callback.onFileProcessed(rowIndex, fileAction.getProceededName(), tab); // Update specific row
+                        .findFirst();
+                entry.ifPresent(e -> callback.onFileProcessed(e.getKey(), fileAction.getProceededName(), tab)); // Update specific row
             }
-            callback.onActionProgress(percentage, tab); // Update overall progress
+            if (callback != null) {
+                callback.onActionProgress(percentage, tab); // Update overall progress
+            }
         }
     }
 
@@ -233,16 +176,22 @@ public class FileActionConcurrently {
         return proceededFiles.get();
     }
 
-
     private void shutdownAndAwaitTermination() {
         executorService.shutdown();
         new Thread(() -> { // Use a separate thread to wait for termination
             try {
-                executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-                callback.onActionCompleted("File action completed.", null, tab);
+                if (!executorService.awaitTermination(THREAD_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
+                    executorService.shutdownNow();
+                }
+                if (callback != null) {
+                    callback.onActionCompleted("File action completed.", null, tab);
+                }
             } catch (InterruptedException e) {
+                executorService.shutdownNow();
                 Thread.currentThread().interrupt();
-                callback.onActionError("File action interrupted.", tab);
+                if (callback != null) {
+                    callback.onActionError("File action interrupted.", tab);
+                }
                 logger.error("File action interrupted: " + e.getMessage(), e);
             }
         }).start();
